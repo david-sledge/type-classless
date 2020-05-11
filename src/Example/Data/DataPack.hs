@@ -1,5 +1,13 @@
 {-# LANGUAGE Rank2Types #-}
 
+-----------------------------------------------------------------------------
+--
+-- This is an implementation of a DataPack reader using the type class
+-- pattern without using type classes. DataPack spec:
+--   <https://github.com/david-sledge/datapack/blob/master/spec.md>
+--
+-----------------------------------------------------------------------------
+
 module Example.Data.DataPack (
     fixintMask,
     nilByte,
