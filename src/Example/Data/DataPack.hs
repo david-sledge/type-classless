@@ -97,7 +97,7 @@ fixnsMask         = 0xa0::Word8
 fixMask           = 0xe0::Word8
 lenMask           = 0x1f::Word8
 
-data DataSourceOp e p s = DataSourceOp {
+data DataSourceOp s e = DataSourceOp {
     _take :: forall r .
       Word32
        -> s -- stream value
@@ -117,7 +117,7 @@ data UnpackState =
   | LocalName
   deriving (Show, Ord, Eq)
 
-data States s c = States {
+data States s = States {
     unpackStack :: [UnpackState],
     source :: s }
   deriving (Show, Ord, Eq)
@@ -175,7 +175,7 @@ defaultCallbacks = Callbacks {
     assortment = callbk,
     object = callbk }
 
-data Env e s r c = Env {
+data Env e s r = Env {
   catchers :: Catchers e s r,
   callbacks :: Callbacks s r }
 
@@ -443,11 +443,7 @@ validateStringState dsOp byte procMore = let
   in
   getStateStack $ \stateStack ->
   case Map.lookup (headSafe stateStack) validBytesDict of
-  Just validBytes -> let
-      callInvalidByte =
-        callInvalidByteErrorHandler byte validBytes >> unpack
-    in
-    case stateStack of
+  Just validBytes -> case stateStack of
     Sequence:_ -> onward
     Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
     Object:_ -> putStateStack (EntryValue:stateStack) >> onward
@@ -826,11 +822,7 @@ unpackT dsOp = unpack
       in
       getStateStack $ \stateStack ->
       case Map.lookup (headSafe stateStack) validBytesDict of
-      Just validBytes -> let
-          callInvalidByte =
-            callInvalidByteErrorHandler byte validBytes >> unpack
-        in
-        case stateStack of
+      Just validBytes -> case stateStack of
         Sequence:_ -> onward
         Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
         Object:_ -> putStateStack (EntryValue:stateStack) >> onward
