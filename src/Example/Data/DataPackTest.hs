@@ -5,6 +5,7 @@ module Example.Data.DataPackTest where
 import Prelude hiding ((>>=), (>>))
 import Control.MonadOp
 import Control.Monad.FixOp
+import Control.Monad.Misc
 import Example.Data.DataPack
 import qualified Data.ByteString.Lazy as C
 import Data.Int
@@ -33,9 +34,8 @@ failCallbacks = Callbacks {
     nsStart = failure' "nsStart",
     dat = failure' "dat",
     classname = failure "classname",
-    noKeyValue = failure "noKeyValue",
     sequenceD = failure "sequence",
-    assortment = failure "assortment",
+    dictionary = failure "dictionary",
     object = failure "object" }
 
 dataSource'ByteStringOp = DataSourceOp {
@@ -65,7 +65,7 @@ myCatchers = Catchers {
 myCallbacks = failCallbacks {
     nil = \s f -> putStrLn "pass" >> f s }
 
-nilSource = C.pack [classnameByte, noKeyValueByte + 1, nilByte]
+nilSource = C.pack [classnameByte, classnameByte + 1, nilByte]
 
 testUnpackT = (
     unpackDataT dataSource'ByteStringOp (C.pack [nilByte]) myCatchers

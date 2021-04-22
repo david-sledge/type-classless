@@ -4,7 +4,7 @@ module Control.Monad.Trans.ReaderOp where
 
 import Control.MonadOp
 import Control.Monad.FixOp
-import Control.Monad.Trans.ClassOp
+import Control.Monad.Misc
 import Control.Monad.Trans.Reader (ReaderT(..), Reader, runReader)
 import Data.Functor.Identity
 
@@ -20,13 +20,14 @@ data MonadReaderOp r m = MonadReaderOp {
     _ask              :: m r,
     _local            :: Local m r,
     _reader           :: ReaderF m r,
-    _monad'MROp       :: MonadOp m,
-    _bind'MR          :: Bind m,
-    _applicative'MROp :: ApplicativeOp m,
-    _pure'MR          :: Pure m,
-    _ap'MR            :: Ap m,
-    _functor'MROp     :: FunctorOp m,
-    _fmap'MR          :: Fmap m }
+    _monad'MROp       :: MonadOp m }
+
+_bind'MR mrOp = _bind $ _monad'MROp mrOp
+_applicative'MROp mrOp = _applicative $ _monad'MROp mrOp
+_pure'MR mrOp = _pure'M $ _monad'MROp mrOp
+_ap'MR mrOp = _ap'M $ _monad'MROp mrOp
+--_functor'MROp mrOp = _functor'MOp $ _monad'MROp mrOp
+_fmap'MR mrOp = _fmap'M $ _monad'MROp mrOp
 
 {- ask :: (Monad m) => ReaderT r m r
    ask = ReaderT return -}
@@ -49,12 +50,10 @@ reader mOp f = ReaderT (_pure'M mOp . f)
        m >>= k = ReaderT $ \r -> do
            a <- runReaderT m r
            runReaderT (k a) r -}
-monad'ReaderTOp mOp@(MonadOp { _pure'M = pure, _bind = (>>=)}) = let
-    lift = _lift monadTrans'ReaderTOp mOp
-  in
-  monadOp (lift . pure) $
+monad'ReaderTOp mOp =
+  monadOp (readerTLift mOp . _pure'M mOp) $
     \m k -> ReaderT $ \r ->
-      runReaderT m r >>= \a ->
+      _bind mOp (runReaderT m r) $ \a ->
       runReaderT (k a) r
 
 --monad'ReaderOp :: MonadOp (ReaderT r Identity)
@@ -63,31 +62,16 @@ monad'ReaderOp = monad'ReaderTOp monad'IdentityOp
 {- instance MonadTrans ReaderT where
        lift m = ReaderT (const m) -}
 --monadTrans'ReaderTOp :: MonadTransOp (ReaderT r)
-monadTrans'ReaderTOp = MonadTransOp $ const $ \m -> ReaderT (const m)
+readerTLift = const $ \m -> ReaderT (const m)
 
 {- instance Monad m => MonadReader r (ReaderT r m) where
        ask = ask
        local = local
        reader = reader -}
 --monadReader'ReaderTOp :: MonadOp m -> MonadReaderOp r (ReaderT r m )
-monadReader'ReaderTOp mOp = let
-    monadOp@(MonadOp {
-        _bind = bind,
-        _applicative'MOp = aOp,
-        _pure'M = pure,
-        _ap'M = ap,
-        _functor'MOp = fOp,
-        _fmap'M = fmap
-      }) = monad'ReaderTOp mOp
-  in
+monadReader'ReaderTOp mOp =
   MonadReaderOp {
-    _monad'MROp = monadOp,
-    _ask    = ask    mOp,
-    _local  = local,
-    _reader = reader mOp,
-    _bind'MR = bind,
-    _applicative'MROp = aOp,
-    _pure'MR = pure,
-    _ap'MR = ap,
-    _functor'MROp = fOp,
-    _fmap'MR = fmap }
+    _monad'MROp = monad'ReaderTOp mOp,
+    _ask = ask mOp,
+    _local = local,
+    _reader = reader mOp }

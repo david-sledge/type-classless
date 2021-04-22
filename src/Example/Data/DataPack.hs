@@ -27,9 +27,8 @@ module Example.Data.DataPack (
     ns32Byte,
     classnameByte,
     sequenceByte,
-    assortmentByte,
+    dictionaryByte,
     objectByte,
-    noKeyValueByte,
     fixbinMask,
     fixstrMask,
     fixnsMask,
@@ -46,7 +45,6 @@ module Example.Data.DataPack (
 
 import Prelude hiding ((>>=), (>>), pure, (<*>), (<$>))
 import Control.MonadOp
-import Control.Monad.Trans.ClassOp
 import Data.Bits
 import Data.Utils
 import Data.Int
@@ -87,10 +85,9 @@ ns16Byte          = 0x55::Word8
 ns32Byte          = 0x56::Word8
 classnameByte     = 0x57::Word8
 sequenceByte      = 0x58::Word8
-assortmentByte    = 0x59::Word8
+dictionaryByte    = 0x59::Word8
 objectByte        = 0x5a::Word8
-noKeyValueByte    = 0x5b::Word8
---unusedBytes = [0x5c..0x5f]
+--unusedBytes = [0x5b..0x5f]
 fixbinMask        = 0x60::Word8
 fixstrMask        = 0x80::Word8
 fixnsMask         = 0xa0::Word8
@@ -108,7 +105,7 @@ data DataSourceOp s e = DataSourceOp {
 
 data UnpackState =
     Sequence
-  | Assortment
+  | Dictionary
   | Object
   | SequenceStart
   | ObjectStart
@@ -146,9 +143,8 @@ data Callbacks s r = Callbacks {
     nsStart :: Word32 -> Callback s r,
     dat :: C.ByteString -> Callback s r,
     classname :: Callback s r,
-    noKeyValue :: Callback s r,
     sequenceD :: Callback s r,
-    assortment :: Callback s r,
+    dictionary :: Callback s r,
     object :: Callback s r }
 
 callbk = \s f -> f s
@@ -170,9 +166,8 @@ defaultCallbacks = Callbacks {
     nsStart = callbk',
     dat = callbk',
     classname = callbk,
-    noKeyValue = callbk,
     sequenceD = callbk,
-    assortment = callbk,
+    dictionary = callbk,
     object = callbk }
 
 data Env e s r = Env {
@@ -184,24 +179,29 @@ infixl 4 <$>, <*>, <%>, <#>
 
 monad'ReaderContTOp = monad'ReaderTOp monad'ContTOp
 
-msOp@(MonadStateOp {
-    _modifyAnd = modifyAnd,
-    _get = get,
-    _state = state,
-    _bind'MS = (>>=),
-    _pure'MS = pure,
-    _ap'MS = (<*>),
-    _fmap'MS = (<$>) }) =
-  monadState'StateTOp $ monad'ReaderContTOp
+( msOp
+  , modifyAnd
+  , get
+  , state
+  , (>>=)
+  , pure
+  , (<*>)
+  , (<$>)) = let
+    msOp = monadState'StateTOp monad'ReaderContTOp
+  in
+  (msOp
+    , _modifyAnd msOp
+    , _get msOp
+    , _state msOp
+    , _bind'MS msOp
+    , _pure'MS msOp
+    , _ap'MS msOp
+    , _fmap'MS msOp )
 
 mrOp@(MonadReaderOp {
     _ask = ask,
     _local = local,
-    _reader = reader{-,
-    _bind'MS = (>>=),
-    _pure'MS = pure,
-    _ap'MS = (<*>),
-    _fmap'MS = (<$>)-} }) =
+    _reader = reader }) =
   monadReader'StateTOp $ monadReader'ReaderTOp monad'ContTOp
 
 k <%> x = k <*> pure x
@@ -212,8 +212,8 @@ modify = _modify msOp
 
 m >> k = m >>= const k
 
-stateReaderContT = _lift monadTrans'StateTOp monad'ReaderContTOp .
-  _lift monadTrans'ReaderTOp monad'ContTOp . ContT
+stateReaderContT = stateTLift monad'ReaderContTOp .
+  readerTLift monad'ContTOp . ContT
 
 catcherAsk f = ask >>= f . catchers
 
@@ -253,7 +253,7 @@ validBytesDict = let
         (bin8Byte, bin32Byte),
         (str8Byte, str32Byte),
         (sequenceByte, sequenceByte),
-        (assortmentByte, assortmentByte),
+        (dictionaryByte, dictionaryByte),
         (objectByte, objectByte),
         (fixbinMask, fixbinMask .|. lenMask),
         (fixstrMask, fixstrMask .|. lenMask) ]
@@ -265,18 +265,17 @@ validBytesDict = let
         (fixstrMask, fixstrMask .|. lenMask) ]
     qnameRanges =
         (ns8Byte, ns32Byte):(fixnsMask, fixstrMask .|. lenMask):localnameRanges
-    propNameRanges = (noKeyValueByte, noKeyValueByte):
+    propNameRanges = (nilByte, nilByte):
         (collectionEndByte, collectionEndByte):qnameRanges
-    keyValueRanges = (noKeyValueByte, noKeyValueByte):sequenceRanges
   in
   Map.fromList [
     (Just Sequence, sequenceRanges),
     (Just SequenceStart, (classnameByte, classnameByte):sequenceRanges),
-    (Just Assortment, keyValueRanges),
+    (Just Dictionary, sequenceRanges),
     (Just Object, propNameRanges),
     (Just ObjectStart, (classnameByte, classnameByte):propNameRanges),
     (Just Classname, qnameRanges),
-    (Just EntryValue, keyValueRanges),
+    (Just EntryValue, sequenceRanges),
     (Just LocalName, localnameRanges),
     (Nothing, valueRanges) ]
 
@@ -285,7 +284,7 @@ headSafe _ = Nothing
 
 callWithSource cb = getSource $ (\r -> stateReaderContT r >>= putSource) . cb
 
---{-
+{-
 takeUnpack dsOp n =
   getSource $ \s ->
   _take dsOp n s (
@@ -384,7 +383,7 @@ validateValueState dsOp byte procMore = let
     in
     case stateStack of
     Sequence:_ -> onward
-    Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+    Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
     Object:_ -> callInvalidByte
     SequenceStart:stateStack' -> putStateStack (Sequence:stateStack') >> onward
     ObjectStart:_ -> callInvalidByte
@@ -401,7 +400,7 @@ validateCollectionEndState dsOp byte procMore = let
     parent stateStack =
       case stateStack of
       Sequence:_ -> putStateStack stateStack >> onward
-      Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+      Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
       Object:_ -> callProgrammaticErrorHandler >> unpack
       SequenceStart:_ -> callProgrammaticErrorHandler >> unpack
       ObjectStart:_ -> callProgrammaticErrorHandler >> unpack
@@ -419,17 +418,17 @@ validateCollectionEndState dsOp byte procMore = let
     in
     case stateStack of
     Sequence:stateStack' -> parent stateStack' >> onward
-    Assortment:stateStack' -> parent stateStack'
+    Dictionary:stateStack' -> parent stateStack'
     Object:stateStack' -> parent stateStack'
     SequenceStart:stateStack' -> parent stateStack'
     ObjectStart:stateStack' -> parent stateStack'
     Classname:_ -> callInvalidByte
     EntryValue:stateStack'' -> (let
         extraCall stack = callbackAsk $ \callbacks ->
-          (callWithSource $ noKeyValue callbacks) >> parent stack
+          (callWithSource $ nil callbacks) >> parent stack
       in
       case stateStack'' of
-      Assortment:stateStack' -> extraCall stateStack'
+      Dictionary:stateStack' -> extraCall stateStack'
       Object:stateStack' -> extraCall stateStack'
       _ -> callProgrammaticErrorHandler >> unpack )
     LocalName:_ -> callInvalidByte
@@ -445,7 +444,7 @@ validateStringState dsOp byte procMore = let
   case Map.lookup (headSafe stateStack) validBytesDict of
   Just validBytes -> case stateStack of
     Sequence:_ -> onward
-    Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+    Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
     Object:_ -> putStateStack (EntryValue:stateStack) >> onward
     SequenceStart:stateStack' -> putStateStack (Sequence:stateStack') >> onward
     ObjectStart:stateStack' ->
@@ -475,7 +474,7 @@ validateNamespaceState dsOp byte procMore = let
     in
     case stateStack of
     Sequence:_ -> callInvalidByte
-    Assortment:_ -> callInvalidByte
+    Dictionary:_ -> callInvalidByte
     Object:_ -> putStateStack (LocalName:stateStack) >> onward
     SequenceStart:_ -> callInvalidByte
     ObjectStart:stateStack' ->
@@ -498,7 +497,7 @@ validateClassnameState dsOp byte procMore = let
     in
     case stateStack of
     Sequence:_ -> callInvalidByte
-    Assortment:_ -> callInvalidByte
+    Dictionary:_ -> callInvalidByte
     Object:_ -> callInvalidByte
     SequenceStart:stack -> putStateStack (Classname:Sequence:stack) >> onward
     ObjectStart:stack -> putStateStack (Classname:Object:stack) >> onward
@@ -509,7 +508,7 @@ validateClassnameState dsOp byte procMore = let
   -- flog the developer!
   _ -> callProgrammaticErrorHandler >> unpack
 
-validateNoKeyValueState dsOp byte procMore = let
+validateNilState dsOp byte procMore = let
     unpack = unpackT dsOp
     onward = procMore >> unpack
   in
@@ -519,15 +518,15 @@ validateNoKeyValueState dsOp byte procMore = let
       callInvalidByte = callInvalidByteErrorHandler byte validBytes >> unpack
     in
     case stateStack of
-    Sequence:_ -> callInvalidByte
-    Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+    Sequence:_ -> onward
+    Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
     Object:_ -> putStateStack (EntryValue:stateStack) >> onward
-    SequenceStart:stack -> callInvalidByte
+    SequenceStart:stateStack' -> putStateStack (Sequence:stateStack') >> onward
     ObjectStart:stack -> putStateStack (EntryValue:Object:stack) >> onward
     Classname:_ -> callInvalidByte
-    EntryValue:stack -> putStateStack stack >> onward
+    EntryValue:stateStack' -> putStateStack stateStack' >> onward
     LocalName:_ -> callInvalidByte
-    _ -> callInvalidByte
+    _ -> procMore
   -- flog the developer!
   _ -> callProgrammaticErrorHandler >> unpack
 
@@ -543,7 +542,7 @@ validateCollectionState dsOp unpackState byte procMore = let
     in
     case stateStack of
     Sequence:_ -> putStateStack (unpackState:stateStack) >> onward
-    Assortment:_ -> putStateStack (unpackState:stateStack) >> onward
+    Dictionary:_ -> putStateStack (unpackState:stateStack) >> onward
     Object:_ -> callInvalidByte
     SequenceStart:stack -> putStateStack (unpackState:Sequence:stack) >>
       onward
@@ -560,7 +559,7 @@ formatDictEntry byte valid more = (
     \dsOp -> callbackAsk $ valid dsOp byte . more dsOp )
 
 formatDict = Map.fromList [
-    formatDictEntry nilByte validateValueState . const $
+    formatDictEntry nilByte validateNilState . const $
       \callbacks -> callWithSource $ nil callbacks,
     formatDictEntry collectionEndByte validateCollectionEndState . const $
       \callbacks -> callWithSource $ collectionEnd callbacks,
@@ -643,14 +642,12 @@ formatDict = Map.fromList [
     formatDictEntry sequenceByte
       (\dsOp -> validateCollectionState dsOp SequenceStart) . const $
       \callback -> callWithSource $ sequenceD callback,
-    formatDictEntry assortmentByte
-      (\dsOp -> validateCollectionState dsOp Assortment) . const $
-      \callback -> callWithSource $ assortment callback,
+    formatDictEntry dictionaryByte
+      (\dsOp -> validateCollectionState dsOp Dictionary) . const $
+      \callback -> callWithSource $ dictionary callback,
     formatDictEntry objectByte
       (\dsOp -> validateCollectionState dsOp ObjectStart) . const $
-      \callback -> callWithSource $ object callback,
-    formatDictEntry noKeyValueByte validateNoKeyValueState . const $
-      \callback -> callWithSource $ noKeyValue callback ]
+      \callback -> callWithSource $ object callback ]
 
 fixDictEntry byteMask validator startCb = (byteMask, \dsOp byte length ->
       callbackAsk $ \callbacks ->
@@ -663,8 +660,9 @@ fixDict = Map.fromList [
     fixDictEntry fixbinMask validateStringState binStart,
     fixDictEntry fixstrMask validateStringState strStart,
     fixDictEntry fixnsMask validateNamespaceState nsStart ]
+--}
 
-{-
+--{-
 unpackT dsOp = unpack
   where
     takeUnpack n = let
@@ -764,7 +762,7 @@ unpackT dsOp = unpack
         in
         case stateStack of
         Sequence:_ -> onward
-        Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+        Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
         Object:_ -> callInvalidByte
         SequenceStart:stateStack' ->
           putStateStack (Sequence:stateStack') >> onward
@@ -781,7 +779,7 @@ unpackT dsOp = unpack
         parent stateStack =
           case stateStack of
           Sequence:_ -> putStateStack stateStack >> onward
-          Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+          Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
           Object:_ -> callProgrammaticErrorHandler >> unpack
           SequenceStart:_ -> callProgrammaticErrorHandler >> unpack
           ObjectStart:_ -> callProgrammaticErrorHandler >> unpack
@@ -799,17 +797,17 @@ unpackT dsOp = unpack
         in
         case stateStack of
         Sequence:stateStack' -> parent stateStack' >> onward
-        Assortment:stateStack' -> parent stateStack'
+        Dictionary:stateStack' -> parent stateStack'
         Object:stateStack' -> parent stateStack'
         SequenceStart:stateStack' -> parent stateStack'
         ObjectStart:stateStack' -> parent stateStack'
         Classname:_ -> callInvalidByte
         EntryValue:stateStack'' -> (let
             extraCall stack = callbackAsk $ \callbacks ->
-              callWithSource (noKeyValue callbacks) >> parent stack
+              callWithSource (nil callbacks) >> parent stack
           in
           case stateStack'' of
-          Assortment:stateStack' -> extraCall stateStack'
+          Dictionary:stateStack' -> extraCall stateStack'
           Object:stateStack' -> extraCall stateStack'
           _ -> callProgrammaticErrorHandler >> unpack )
         LocalName:_ -> callInvalidByte
@@ -824,7 +822,7 @@ unpackT dsOp = unpack
       case Map.lookup (headSafe stateStack) validBytesDict of
       Just validBytes -> case stateStack of
         Sequence:_ -> onward
-        Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+        Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
         Object:_ -> putStateStack (EntryValue:stateStack) >> onward
         SequenceStart:stateStack' ->
           putStateStack (Sequence:stateStack') >> onward
@@ -855,7 +853,7 @@ unpackT dsOp = unpack
         in
         case stateStack of
         Sequence:_ -> callInvalidByte
-        Assortment:_ -> callInvalidByte
+        Dictionary:_ -> callInvalidByte
         Object:_ -> putStateStack (LocalName:stateStack) >> onward
         SequenceStart:_ -> callInvalidByte
         ObjectStart:stateStack' ->
@@ -878,7 +876,7 @@ unpackT dsOp = unpack
         in
         case stateStack of
         Sequence:_ -> callInvalidByte
-        Assortment:_ -> callInvalidByte
+        Dictionary:_ -> callInvalidByte
         Object:_ -> callInvalidByte
         SequenceStart:stack -> putStateStack (Classname:Sequence:stack) >>
           onward
@@ -890,7 +888,7 @@ unpackT dsOp = unpack
       -- flog the developer!
       _ -> callProgrammaticErrorHandler >> unpack
 
-    validateNoKeyValueState byte procMore = let
+    validateNilState byte procMore = let
         onward = procMore >> unpack
       in
       getStateStack $ \stateStack ->
@@ -900,15 +898,16 @@ unpackT dsOp = unpack
             >> unpack
         in
         case stateStack of
-        Sequence:_ -> callInvalidByte
-        Assortment:_ -> putStateStack (EntryValue:stateStack) >> onward
+        Sequence:_ -> onward
+        Dictionary:_ -> putStateStack (EntryValue:stateStack) >> onward
         Object:_ -> putStateStack (EntryValue:stateStack) >> onward
-        SequenceStart:stack -> callInvalidByte
+        SequenceStart:stateStack' ->
+          putStateStack (Sequence:stateStack') >> onward
         ObjectStart:stack -> putStateStack (EntryValue:Object:stack) >> onward
         Classname:_ -> callInvalidByte
-        EntryValue:stack -> putStateStack stack >> onward
+        EntryValue:stateStack' -> putStateStack stateStack' >> onward
         LocalName:_ -> callInvalidByte
-        _ -> callInvalidByte
+        _ -> procMore
       -- flog the developer!
       _ -> callProgrammaticErrorHandler >> unpack
 
@@ -923,7 +922,7 @@ unpackT dsOp = unpack
         in
         case stateStack of
         Sequence:_ -> putStateStack (unpackState:stateStack) >> onward
-        Assortment:_ -> putStateStack (unpackState:stateStack) >> onward
+        Dictionary:_ -> putStateStack (unpackState:stateStack) >> onward
         Object:_ -> callInvalidByte
         SequenceStart:stack -> putStateStack (unpackState:Sequence:stack) >>
           onward
@@ -940,7 +939,7 @@ unpackT dsOp = unpack
         callbackAsk $ valid byte . more )
 
     formatDict = Map.fromList [
-        formatDictEntry nilByte validateValueState $ callWithSource . nil,
+        formatDictEntry nilByte validateNilState $ callWithSource . nil,
         formatDictEntry collectionEndByte validateCollectionEndState $
           callWithSource . collectionEnd,
         formatDictEntry falseByte validateValueState (
@@ -1028,12 +1027,10 @@ unpackT dsOp = unpack
           callWithSource . classname,
         formatDictEntry sequenceByte (validateCollectionState SequenceStart) $
           callWithSource . sequenceD,
-        formatDictEntry assortmentByte (validateCollectionState Assortment) $
-          callWithSource . assortment,
+        formatDictEntry dictionaryByte (validateCollectionState Dictionary) $
+          callWithSource . dictionary,
         formatDictEntry objectByte (validateCollectionState ObjectStart) $
-          callWithSource . object,
-        formatDictEntry noKeyValueByte validateNoKeyValueState $
-          callWithSource . noKeyValue ]
+          callWithSource . object ]
 
     fixDictEntry byteMask validator startCb = (byteMask, \byte length ->
           callbackAsk $ \callbacks ->
