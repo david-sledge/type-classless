@@ -15,7 +15,8 @@ import Control.Monad.Trans.ContOp
 
 --ex3 :: Num b => Bool -> ContT r Identity b -> ContT r Identity b
 ex3 bool h = let
-    MonadOp {_pure'M = pure, _bind = (>>=)} = monad'ContTOp
+    pure = _pure'M monad'ContTOp
+    (>>=) = _bind monad'ContTOp
   in
   pure 1 >>= \a ->
   (cont (\fred -> if bool then h else fred 10)) >>= \b ->
@@ -27,7 +28,8 @@ test3False = runCont (ex3 False "escape") show
 
 --ex4 :: Num b => Bool -> ([Char] -> m r) -> ContT r m b
 ex4 h = let
-    MonadOp {_pure'M = pure, _bind = (>>=)} = monad'ContTOp
+    pure = _pure'M monad'ContTOp
+    (>>=) = _bind monad'ContTOp
   in
   pure 1 >>= \a ->
   (ContT (\fred -> h "escape" a fred)) >>= \b ->
@@ -38,7 +40,8 @@ test4True = runContT (ex4 (\str n c -> c n)) print
 test4False = runContT (ex4 (\str n c -> putStrLn str)) print
 
 ex5 b h = let
-    MonadOp {_pure'M = pure, _bind = (>>=)} = monad'ContTOp
+    pure = _pure'M monad'ContTOp
+    (>>=) = _bind monad'ContTOp
   in
   pure 1 >>= \a ->
   cont (\c -> h b (c 10 ++ c 20)) >>= \b ->
@@ -63,12 +66,11 @@ data Catchers n a = Catchers {
   :: (Ord a, Floating a) =>
      a -> TryT r m (Catchers a (m r)) (a, a) -}
 exceptionalT n = let
-    (MonadStateOp {
-        _pure'MS = pure,
-        _bind'MS = (>>=),
-        _modifyAnd = modifyAnd,
-        _get = get }) =
-      monadState'StateTOp monad'ReaderContTOp
+    msOp = monadState'StateTOp monad'ReaderContTOp
+    pure = _pure'MS msOp
+    (>>=) = _bind'MS msOp
+    modifyAnd = _modifyAnd msOp
+    get = _get msOp
     (MonadReaderOp {
         _ask = ask }) =
       monadReader'StateTOp monadReader'ReaderContOp

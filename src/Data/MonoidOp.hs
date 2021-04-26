@@ -2,30 +2,22 @@
 
 module Data.MonoidOp where
 
-import Data.SemigroupOp
+type Assoc a = a -> a -> a
 
--- a monoid is a semigroup with an identity
-data MonoidOp a = MonoidOp {
-    _mempty :: a,
-    _semigroup'MoOp :: SemigroupOp a,
-    _assoc'Mo    :: Assoc a }
-
---monoidOp :: Assoc a -> a -> MonoidOp a
-monoidOp assoc mempty =
-  MonoidOp {
-    _semigroup'MoOp = SemigroupOp assoc,
-    _mempty = mempty,
-    _assoc'Mo = assoc
+-- a monoid has an associative operation with an identity with the operation
+data MonoidOp a = MonoidOp
+  { _assoc :: Assoc a
+  , _mempty :: a
   }
 
 -- numbers are monoids with respect to more than one associative operation
 --MonoidOp Integer
-monoidSumOp = monoidOp (+) 0
+monoidSumOp = MonoidOp (+) 0
 --MonoidOp Integer
-monoidProductOp = monoidOp (*) 1
+monoidProductOp = MonoidOp (*) 1
 
 -- so are Booleans
 --MonoidOp Bool
-monoidOrOp = monoidOp (||) False
+monoidOrOp = MonoidOp (||) False
 --MonoidOp Bool
-monoidAndOp = monoidOp (&&) True
+monoidAndOp = MonoidOp (&&) True

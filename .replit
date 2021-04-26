@@ -1,2 +1,2 @@
 language = "haskell"
-run = "cd src; ghci"
+run = "cd src && ghc -o main main.hs && ./main"

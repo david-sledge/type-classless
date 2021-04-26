@@ -4,7 +4,7 @@ module Control.Monad.Trans.StateOp where
 
 import Control.MonadOp
 import Control.Monad.FixOp
-import Control.Monad.Trans.ClassOp
+import Control.Monad.Misc
 import Control.Monad.Trans.ReaderOp
 import Control.Monad.Trans.State.Strict (StateT(..), State, runState, evalState,
     execState)
@@ -22,13 +22,14 @@ data MonadStateOp s m = MonadStateOp {
     _modifyAnd        :: ModifyAnd s m,
     _get              :: m s,
     _state            :: StateF s m,
-    _monad'MSOp       :: MonadOp m,
-    _bind'MS          :: Bind m,
-    _applicative'MSOp :: ApplicativeOp m,
-    _pure'MS          :: Pure m,
-    _ap'MS            :: Ap m,
-    _functor'MSOp     :: FunctorOp m,
-    _fmap'MS          :: Fmap m }
+    _monad'MSOp       :: MonadOp m }
+
+_bind'MS msOp = _bind $ _monad'MSOp msOp
+_applicative'MSOp msOp = _applicative $ _monad'MSOp msOp
+_pure'MS msOp = _pure'M $ _monad'MSOp msOp
+_ap'MS msOp = _ap'M $ _monad'MSOp msOp
+--_functor'MSOp msOp = _functor'MOp $ _monad'MSOp msOp
+_fmap'MS msOp = _fmap'M $ _monad'MSOp msOp
 
 {- class (MonadFix m) => MonadRevState s m | m -> s where
      get :: m s
@@ -82,21 +83,15 @@ state mOp f = StateT (_pure'M mOp . f)
 
 {- evalStateT :: (Monad m) => StateT s m a -> s -> m a -}
 --evalStateT :: MonadOp m -> StateT s m b -> s -> m b
-evalStateT (MonadOp { _pure'M = pure, _bind = (>>=)}) m s =
-  runStateT m s >>= (pure . fst)
+evalStateT mOp m s = _bind mOp (runStateT m s) $ _pure'M mOp . fst
 
-evalLazyStateT (MonadOp { _pure'M = pure, _bind = (>>=)}) m s =
-  runStateT m s >>= \ ~(a, _) ->
-  pure a
+evalLazyStateT mOp m s = _bind mOp (runStateT m s) $ \ ~(a, _) -> _pure'M mOp a
 
 {- execStateT :: (Monad m) => StateT s m a -> s -> m s -}
 --execStateT :: MonadOp m -> StateT s m b -> s -> m s
-execStateT (MonadOp { _pure'M = pure, _bind = (>>=)}) m s =
-  runStateT m s >>= (pure . snd)
+execStateT mOp m s = _bind mOp (runStateT m s) $ _pure'M mOp . snd
 
-execLazyStateT (MonadOp { _pure'M = pure, _bind = (>>=)}) m s =
-  runStateT m s >>= \ ~(_, s) ->
-  pure s
+execLazyStateT mOp m s = _bind mOp (runStateT m s) $ \ ~(_, s) -> _pure'M mOp s
 
 {- instance (Monad m) => Monad (StateT s m) where
        return a = state $ \s -> (a, s)
@@ -104,17 +99,15 @@ execLazyStateT (MonadOp { _pure'M = pure, _bind = (>>=)}) m s =
            (a, s') <- runStateT m s
            runStateT (k a) s' -}
 --monad'StateTOp :: MonadOp m -> MonadOp (StateT s m)
-monad'StateTOp mOp@(MonadOp { _bind = (>>=)}) =
+monad'StateTOp mOp =
   monadOp (\a -> state mOp $ \s -> (a, s)) $ \m k ->
     StateT $ \s ->
-      runStateT m s >>= \(a, s') ->
-      runStateT (k a) s'
+      _bind mOp (runStateT m s) $ \(a, s') -> runStateT (k a) s'
 
-monad'LazyStateTOp mOp@(MonadOp { _bind = (>>=)}) =
+monad'LazyStateTOp mOp =
   monadOp (\a -> state mOp $ \s -> (a, s)) $ \m k ->
     StateT $ \s ->
-      runStateT m s >>= \ ~(a, s') ->
-      runStateT (k a) s'
+      _bind mOp (runStateT m s) $ \ ~(a, s') -> runStateT (k a) s'
 
 --monad'StateOp :: MonadOp (StateT s Identity)
 monad'StateOp = monad'StateTOp monad'IdentityOp
@@ -124,14 +117,13 @@ monad'StateOp = monad'StateTOp monad'IdentityOp
        mfix (\ ~(x, _) -> runStateT (f x) s) -}
 
 --monadFix'RevStateTOp :: MonadFixOp m -> MonadFixOp (StateT b m)
-monadFix'RevStateTOp
-  (MonadFixOp {
-      _monad'MFOp = mOp,
-      _mfix = mfix,
-      _bind'MF = (>>=),
-      _pure'MF = pure }) =
+monadFix'RevStateTOp monadOp = let
+    pure = _pure'MF monadOp
+    (>>=) = _bind'MF monadOp
+    mfix = _mfix monadOp
+  in
   monadFixOp
-    (\a -> state mOp $ \s -> (a, s))
+    (\a -> state (_monad'MFOp monadOp) $ \s -> (a, s))
     (\m f ->
     StateT $ \s ->
     mfix (\ ~(s', _) ->
@@ -150,9 +142,8 @@ monadFix'RevStateOp = monadFix'RevStateTOp monadFix'IdentityOp
            a <- m
            return (a, s) -}
 --monadTrans'StateTOp :: MonadTransOp (StateT s)
-monadTrans'StateTOp = MonadTransOp $
-  \(MonadOp { _pure'M = pure, _bind = (>>=)}) m ->
-    StateT $ \s -> m >>= \a -> pure (a, s)
+stateTLift mOp m =
+  StateT $ \s -> _bind mOp m $ \a -> _pure'M mOp (a, s)
 
 {- instance (MonadReader r m) => MonadReader r (StateT s m) where
        ask = lift ask
@@ -160,58 +151,27 @@ monadTrans'StateTOp = MonadTransOp $
        reader = lift . reader -}
 --monadReader'StateTOp ::
 --    MonadReaderOp r m -> MonadReaderOp r (StateT s m)
-monadReader'StateTOp (MonadReaderOp {
-    _monad'MROp = mOp,
-    _ask = ask,
-    _local = local,
-    _reader = reader}) = let
-    lift = _lift monadTrans'StateTOp mOp
-    monadOp@(MonadOp {
-        _bind = bind,
-        _applicative'MOp = aOp,
-        _pure'M = pure,
-        _ap'M = ap,
-        _functor'MOp = fOp,
-        _fmap'M = fmap
-      }) = monad'StateTOp mOp
+monadReader'StateTOp mrOp = let
+    mOp = _monad'MROp mrOp
+    lift = stateTLift mOp
   in
   MonadReaderOp {
-    _monad'MROp = monadOp,
-    _ask = lift ask,
-    _local = \f m -> StateT $ local f . runStateT m,
-    _reader = lift . reader,
-    _bind'MR = bind,
-    _applicative'MROp = aOp,
-    _pure'MR = pure,
-    _ap'MR = ap,
-    _functor'MROp = fOp,
-    _fmap'MR = fmap }
+    _monad'MROp = monad'StateTOp mOp,
+    _ask = lift $ _ask mrOp,
+    _local = \f m -> StateT $ _local mrOp f . runStateT m,
+    _reader = lift . _reader mrOp }
 
 {- instance (Monad m) => MonadState s (StateT s m) where
        get = get -- from Control.Monad.Trans.State
        put = put
        state = state -}
 --monadState'StateTOp :: MonadOp m -> MonadStateOp s (StateT s m)
-monadState'StateTOp mOp = let
-    monadOp@(MonadOp {
-        _bind = bind,
-        _applicative'MOp = aOp,
-        _pure'M = pure,
-        _ap'M = ap,
-        _functor'MOp = fOp,
-        _fmap'M = fmap }) = monad'StateTOp mOp
-  in
+monadState'StateTOp mOp =
   MonadStateOp {
-    _monad'MSOp = monadOp,
+    _monad'MSOp = monad'StateTOp mOp,
     _modifyAnd = modifyAnd mOp,
     _get = get mOp,
-    _state = state mOp,
-    _bind'MS = bind,
-    _applicative'MSOp = aOp,
-    _pure'MS = pure,
-    _ap'MS = ap,
-    _functor'MSOp = fOp,
-    _fmap'MS = fmap }
+    _state = state mOp }
 
 {- instance MonadFix m => MonadRevState s (StateT s m) where
      get = get
@@ -219,27 +179,14 @@ monadState'StateTOp mOp = let
      state = state -}
 --monadRevState'StateTOp :: MonadFixOp m -> MonadRevStateOp s (StateT s m)
 monadRevState'StateTOp mfOp@(MonadFixOp {_monad'MFOp = mOp}) = let
-    monadFixOp@(MonadFixOp {
-        _monad'MFOp = monadOp,
-        _bind'MF = bind,
-        _applicative'MFOp = aOp,
-        _pure'MF = pure,
-        _ap'MF = ap,
-        _functor'MFOp = fOp,
-        _fmap'MF = fmap }) = monadFix'RevStateTOp mfOp
+    monadFixOp = monadFix'RevStateTOp mfOp
   in
   (
     MonadStateOp {
-      _monad'MSOp = monadOp,
+      _monad'MSOp = _monad'MFOp monadFixOp,
       _modifyAnd = modifyAnd mOp,
       _get = get mOp,
-      _state = state mOp,
-      _bind'MS = bind,
-      _applicative'MSOp = aOp,
-      _pure'MS = pure,
-      _ap'MS = ap,
-      _functor'MSOp = fOp,
-      _fmap'MS = fmap },
+      _state = state mOp },
     monadFixOp )
 
 {- instance (MonadState s m) => MonadState s (ReaderT r m) where
@@ -247,29 +194,12 @@ monadRevState'StateTOp mfOp@(MonadFixOp {_monad'MFOp = mOp}) = let
        put   = lift . put
        state = lift . state -}
 --monadState'ReaderTOp :: MonadStateOp s m -> MonadStateOp s (ReaderT r m)
-monadState'ReaderTOp (MonadStateOp {
-        _monad'MSOp = mOp,
-        _modifyAnd = modifyAnd,
-        _get = get,
-        _state = state
-      }) = let
-    lift = _lift monadTrans'ReaderTOp mOp
-    monadOp@(MonadOp {
-        _bind = bind,
-        _applicative'MOp = aOp,
-        _pure'M = pure,
-        _ap'M = ap,
-        _functor'MOp = fOp,
-        _fmap'M = fmap }) = monad'ReaderTOp mOp
+monadState'ReaderTOp msOp = let
+    mOp = _monad'MSOp msOp
+    lift = readerTLift mOp
   in
   MonadStateOp {
     _monad'MSOp = monad'ReaderTOp mOp,
-    _modifyAnd = \f -> lift . modifyAnd f,
-    _get = lift get,
-    _state = lift . state,
-    _bind'MS = bind,
-    _applicative'MSOp = aOp,
-    _pure'MS = pure,
-    _ap'MS = ap,
-    _functor'MSOp = fOp,
-    _fmap'MS = fmap }
+    _modifyAnd = \f -> lift . _modifyAnd msOp f,
+    _get = lift $ _get msOp,
+    _state = lift . _state msOp }

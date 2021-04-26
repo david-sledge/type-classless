@@ -2,7 +2,7 @@
 
 import Control.MonadOp
 import Control.Monad.FixOp
-import Control.Monad.Trans.ClassOp
+import Control.Monad.Misc
 import Control.Monad.Trans.Reader (ReaderT(..), Reader, runReader)
 import Control.Monad.Trans.ReaderOp
 import Control.Monad.Trans.State.Strict (StateT(..), State, runState, evalState,
@@ -25,8 +25,10 @@ import Control.Monad.Trans.ContOp
      put r
      return [r, s] -}
 --test :: MonadStateOp r m -> MonadReaderOp r m -> m [r]
-test = \msOp@(MonadStateOp { _get = get })
-        (MonadReaderOp { _bind'MR = (>>=), _ask = ask }) -> let
+test = \msOp mrOp -> let
+    (>>=) = _bind'MR mrOp
+    ask = _ask mrOp
+    get = _get msOp
     putAnd = _putAnd msOp
     -- the following could also be used. They SHOULD return the equivalent thing
     --(>>=) = _bind (_monad'MSOp sOp)
@@ -76,13 +78,13 @@ loop (>>=) p =
 --}
 
 --(Num s, Ord s) => MonadContOp m -> MonadStateOp s m -> m s
-p callCC
-  (MonadStateOp {
-      _pure'MS = pure,
-      _bind'MS = (>>=),
-      _modifyAnd = modifyAnd,
-      _get = get,
-      _state = state }) =
+p callCC msOp = let
+    pure = _pure'MS msOp
+    (>>=) = _bind'MS msOp
+    modifyAnd = _modifyAnd msOp
+    get = _get msOp
+    state = _state msOp
+  in
   callCC $ \c -> loop (>>=) $
     modifyAnd (+ 1) id >>= \s ->
     if (s > 4) then (c s) else pure s
@@ -109,7 +111,10 @@ data Provider s m r o = Provider {
 type SRC s m r o = StateT s (ReaderT (Provider s m r o) (ContT r m))
 
 --{-
-p2 (MonadReaderOp { _pure'MR = pure, _bind'MR = (>>=), _ask = ask }) = let
+p2 mrOp = let
+    pure = _pure'MR mrOp
+    (>>=) = _bind'MR mrOp
+    ask = _ask mrOp
   in
   ask >>= \(Provider callCC (MonadStateOp {
           _modifyAnd = modifyAnd, _get = get }) o) ->
@@ -131,9 +136,12 @@ fun2 n = let
 --}
 
 --p3 :: (Num s, Ord s) => Feeder s m o -> m s
-p3 ms@(
-  MonadOp {_pure'M = pure, _bind = (>>=)},
-  (MonadStateOp { _modifyAnd = modifyAnd, _get = get }, callCC)) =
+p3 (mOp, (msOp, callCC)) = let
+    pure = _pure'M mOp
+    (>>=) = _bind mOp
+    modifyAnd = _modifyAnd msOp
+    get = _get msOp
+  in
   callCC $ \c -> loop (>>=) $
     get >>= \s ->
     if (s > 4) then (c s) else modifyAnd (+ 1) id >>= const (pure ())
@@ -251,9 +259,10 @@ exceptional n = let
   where
     topthrow = Thrower (\ms e -> error ("unhandled exception " ++ show e))
     p ms = catchI ms (q ms) handler
-    q ms@(
-      MonadOp {_pure'M = pure, _bind = (>>=)},
+    q ms@(mOp,
       ((MonadStateOp { _modifyAnd = modifyAnd, _get = get }), (_, CallCCOp callCC))) = let
+        pure = _pure'M mOp
+        (>>=) = _bind mOp
         m >> k = m >>= const k
         modify f = modifyAnd f (const ())
       in
@@ -268,14 +277,12 @@ exceptional n = let
 
 lastOccurrence :: Int -> State [Int] Bool
 lastOccurrence x = let
-    (msOp@MonadStateOp {
-        _get = get
-      }, MonadFixOp {
-        _mfix = mfix,
-        _monad'MFOp = mOp,
-        _bind'MF = (>>=),
-        _pure'MF = pure
-      }) = monadRevState'StateTOp monadFix'IdentityOp
+    (msOp, mfOp) = monadRevState'StateTOp monadFix'IdentityOp
+    get = _get msOp
+    mfix = _mfix mfOp
+    mOp = _monad'MFOp mfOp
+    (>>=) = _bind'MF mfOp
+    pure = _pure'MF mfOp
     m >> k = m >>= const k
     put = _put msOp
   in
@@ -286,7 +293,7 @@ lastOccurrence x = let
     ) >>= \xs -> pure . not $ elem x xs
 
 lastOccurrences :: [Int] -> State [Int] [Bool]
-lastOccurrences xs = _traverse traversable'ListOp
+lastOccurrences xs = listTraverse
   (_applicative'MFOp monadFix'RevStateOp) lastOccurrence xs
 
 exampleValue :: [Bool]
@@ -296,10 +303,8 @@ expectedResult :: [Bool]
 expectedResult = [False,False,True,False,True,True,True,True]
 
 revStateTest = let
-    MonadOp {
-        _bind = (>>=),
-        _pure'M = pure
-      } = monad'IOOp
+    (>>=) = _bind monad'IOOp
+    pure = _pure'M monad'IOOp
   in
   (timeout 1000000 $ return $! exampleValue == expectedResult) >>= \b ->
   if b == Just True
