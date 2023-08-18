@@ -1,0 +1,39 @@
+name:            type-classless-explicit
+version:         0.0.1
+license:         MIT
+license-file:    LICENSE
+author:          David M. Sledge <sledged@gmail.com>
+maintainer:      David M. Sledge <sledged@gmail.com>
+synopsis:        Type class pattern implementation without Haskell's type classes
+description:     TBD
+category:        Control
+stability:       Unstable
+cabal-version:   >= 1.10
+build-type:      Simple
+homepage:        https://github.com/david-sledge/type-classless/type-classless-explicit
+extra-source-files: README.md ChangeLog.md
+
+library
+    default-language: Haskell2010
+    if os(windows)
+        cpp-options: -DWINDOWS
+
+    build-depends:   base                      >= 4.10     && < 5
+
+    exposed-modules: Control.MonadOps
+                   , Control.Monad.Misc
+                   , Control.Monad.ContOps
+                   , Control.Monad.ReaderOps
+                   , Control.Monad.StateOps
+                   , Data.FixOp
+                   , Data.Fold
+                   , Data.MonoidOps
+                   , Data.TraversableOp
+    ghc-options:     -Wall
+
+    if !os(windows)
+         build-depends: unix
+
+source-repository head
+  type:     git
+  location: https://github.com/david-sledge/type-classless

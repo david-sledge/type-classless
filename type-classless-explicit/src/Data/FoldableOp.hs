@@ -1,6 +1,6 @@
 {-# LANGUAGE Rank2Types #-}
 
-module Data.FoldableOp where
+module Data.FoldableOp (Fold, listFoldr) where
 
 {- class Foldable t where
        foldr :: (a -> b -> b) -> b -> t a -> b -}
