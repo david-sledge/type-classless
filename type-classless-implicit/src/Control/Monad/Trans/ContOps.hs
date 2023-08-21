@@ -23,7 +23,7 @@ contTMonadTransOp m = ContT (m >>=)
     m >>= k  = ContT $ \ c -> runContT m (\ x -> runContT (k x) c) -}
 --contTMonadOps :: MonadOp (ContT r m)
 contTMonadOps :: MonadOps (ContT r m)
-contTMonadOps = monadOps (\x -> ContT ($ x)) $
+contTMonadOps = pkgMonadOps (\x -> ContT ($ x)) $
     \m k -> ContT $ \ c -> runContT m (\ x -> runContT (k x) c)
 
 {- evalContT :: (Monad m) => ContT r m r -> m r

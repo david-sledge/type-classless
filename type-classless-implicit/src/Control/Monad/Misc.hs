@@ -12,109 +12,75 @@ import Control.Applicative (Const(Const))
 import Data.Coerce (coerce)
 
 ioMonadOps :: MonadOps IO
-ioMonadOps = monadOps Prelude.return (Prelude.>>=)
+ioMonadOps = pkgMonadOps Prelude.return (Prelude.>>=)
 
 ioApplicativeOps :: ApplicativeOps IO
 ioApplicativeOps = let ?monadOps = ioMonadOps in monadApplicativeOps
 
-listMonadOps :: MonadOps []
-listMonadOps = monadOps (:[]) $ fix
-  ( \g accf xs k ->
-      case xs of
-      x:xs' -> g (accf . (k x ++)) xs' k
-      _ -> accf []
-  ) id
+listFunctorOps :: FunctorOps []
+listFunctorOps = pkgFunctorOps $
+  let g accf f (x : xs) = g (accf . (f x:)) f xs
+      g accf _ _ = accf []
+  in g id
 
-listFmapOp :: Fmap []
-listFmapOp = fix
-  ( \g accf f xs ->
-      case xs of
-      x:xs' -> g (accf . (f x:)) f xs'
-      _ -> accf []
-  ) id
+listMonadOps :: MonadOps []
+listMonadOps =
+  let ?monadOps = pkgMonadOps (:[]) $
+        let g accf (x : xs) k = g (accf . (k x ++)) xs k
+            g accf _ _ = accf []
+        in g id
+  in ?monadOps {_monadApplicativeOps = monadApplicativeOps { _applicativeFunctorOps = listFunctorOps }}
 
 listApplicativeOps :: ApplicativeOps []
-listApplicativeOps = let ?monadOps = listMonadOps in monadApplicativeOps
-
-{-
-Could have instead used:
-listFunctorOp = functorFromApplicativeOps listApplicativeOps
---}
+listApplicativeOps = _monadApplicativeOps listMonadOps
 
 listAlternativeOps :: AlternativeOps []
-listAlternativeOps = AlternativeOps listApplicativeOps (MonoidLiftOps listMonoidOps) undefined undefined
-
-{-
-instance Semigroup a => Semigroup [a] where
-  (x:xs) <> (y:ys) = x <> y : xs <> ys
-  [] <> xs = xs
-  xs <> _ = xs
-
-instance Semigroup a => Monoid [a] where
-  mempty = []
---}
-assocListMonoidOps :: Assoc a -> MonoidOps [a]
-assocListMonoidOps assocF =
-  MonoidOps
-    ( fix
-      ( \g accf xs ys ->
-          case xs of
-          x:xs' ->
-            case ys of
-            y:ys' -> g (accf . (assocF x y:)) xs' ys'
-            _ -> accf xs
-          _ -> accf ys
-      ) id
-    ) []
-
-semigroupListSemigroupOp :: Assoc a -> Assoc [a]
-semigroupListSemigroupOp assocF = let ?monoidOps = assocListMonoidOps assocF in assoc
+listAlternativeOps = pkgAlternativeOps listApplicativeOps $ MonoidLiftOps listMonoidOps
 
 --{-
 listFixLiftOp :: MfixOp []
 listFixLiftOp = MfixOp $ fix
-  ( \mfix f ->
+  ( \lfix f ->
       case fix (f . head) of
-      (x:_) -> x : mfix (tail . f)
+      x : _ -> x : lfix (tail . f)
       _     -> []
   )
 --}
 
-{-
-instance Applicative ZipList where
+{- instance Applicative ZipList where
     pure x = ZipList (repeat x)
-    liftA2 f (ZipList xs) (ZipList ys) = ZipList (zipWith f xs ys)
-
--- | @since 4.11.0.0
-instance Alternative ZipList where
-   empty = ZipList []
-   ZipList xs <|> ZipList ys = ZipList (xs ++ drop (length xs) ys)
--}
+    liftA2 f (ZipList xs) (ZipList ys) = ZipList (zipWith f xs ys) -}
 zipListApplicativeOps :: ApplicativeOps []
-zipListApplicativeOps = ApplicativeOps repeat (zipWith id) zipWith
+zipListApplicativeOps = pkgApplicativeOps repeat . Right $ Right zipWith
+
+{- instance Alternative ZipList where
+   empty = ZipList []
+   ZipList xs <|> ZipList ys = ZipList (xs ++ drop (length xs) ys) -}
+zipListAlternative :: AlternativeOps []
+zipListAlternative = pkgAlternativeOps zipListApplicativeOps $ MonoidLiftOps zipListMonoidOps
 
 identityMonadOps :: MonadOps Identity
-identityMonadOps = monadOps Identity (\m k -> k $ runIdentity m)
+identityMonadOps = pkgMonadOps Identity (\m k -> k $ runIdentity m)
 
 identityApplicativeOps :: ApplicativeOps Identity
-identityApplicativeOps = _applicativeOps identityMonadOps
+identityApplicativeOps = _monadApplicativeOps identityMonadOps
 
 identityFunctorOp :: Fmap Identity
 identityFunctorOp f = Identity . f . runIdentity
 
-semigroupIdentitySemigroupOp :: Assoc a -> Assoc (Identity a)
-semigroupIdentitySemigroupOp assocF (Identity x) (Identity y) = Identity (assocF x y)
+assocIdentityAssoc :: Assoc a -> Assoc (Identity a)
+assocIdentityAssoc assocF (Identity x) (Identity y) = Identity (assocF x y)
 
 monoidIdentityMonoidOps :: (?monoidOps :: MonoidOps a) => MonoidOps (Identity a)
 monoidIdentityMonoidOps =
-  MonoidOps (semigroupIdentitySemigroupOp assoc)
+  MonoidOps (assocIdentityAssoc assoc)
     $ Identity ident
 
 identityFixLiftOp :: MfixOp Identity
 identityFixLiftOp = MfixOp $ \ f -> Identity . fix $ runIdentity . f
 
 maybeMonadOps :: MonadOps Maybe
-maybeMonadOps = monadOps Just $ \mx f ->
+maybeMonadOps = pkgMonadOps Just $ \mx f ->
     case mx of
     Just x -> f x
     _ -> Nothing
@@ -136,8 +102,8 @@ instance Semigroup a => Semigroup (Maybe a) where
 instance Semigroup a => Monoid (Maybe a) where
     mempty = Nothing
 -}
-semigroupMaybeMonoidOps :: Assoc a -> MonoidOps (Maybe a)
-semigroupMaybeMonoidOps assocF = MonoidOps
+assocMaybeMonoidOps :: Assoc a -> MonoidOps (Maybe a)
+assocMaybeMonoidOps assocF = MonoidOps
     ( \xm ym ->
         case xm of
         Just x ->
@@ -147,8 +113,8 @@ semigroupMaybeMonoidOps assocF = MonoidOps
         _ -> ym
     ) Nothing
 
-semigroupMaybeSemigroupOp :: Assoc a -> Assoc (Maybe a)
-semigroupMaybeSemigroupOp assocF = let ?monoidOps = semigroupMaybeMonoidOps assocF in assoc
+assocMaybeAssoc :: Assoc a -> Assoc (Maybe a)
+assocMaybeAssoc assocF = let ?monoidOps = assocMaybeMonoidOps assocF in assoc
 
 {-
 https://gitlab.haskell.org/ghc/ghc/-/issues/9588
@@ -177,7 +143,7 @@ monoidLiftEitherOps e = MonoidOps
   liftA2 _ (Const x) (Const y) = Const (x `mappend` y)
   (<*>) = coerce (mappend :: m -> m -> m) -}
 constApplicativeOps :: (?monoidOps :: MonoidOps m) => ApplicativeOps (Const m)
-constApplicativeOps = applicativeOps
+constApplicativeOps = pkgApplicativeOps
   (const $ Const ident) $
   Left (
     coerce assoc,

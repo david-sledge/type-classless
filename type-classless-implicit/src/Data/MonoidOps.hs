@@ -37,10 +37,31 @@ monoidOrOps = MonoidOps (||) False
 monoidAndOps :: MonoidOps Bool
 monoidAndOps = MonoidOps (&&) True
 
+listMonoidOps :: MonoidOps [a]
+listMonoidOps = MonoidOps (++) []
+
+{-
+instance Semigroup a => Semigroup [a] where
+  (x:xs) <> (y:ys) = x <> y : xs <> ys
+  [] <> xs = xs
+  xs <> _ = xs
+
+instance Semigroup a => Monoid [a] where
+  mempty = []
+--}
+assocListMonoidOps :: Assoc a -> MonoidOps [a]
+assocListMonoidOps assocF =
+  MonoidOps
+    ( let g accf (x : xs) (y : ys) = g (accf . (assocF x y:)) xs ys
+          g accf xs@(_ : _) _ = accf xs
+          g accf _ ys = accf ys
+      in g id
+    ) []
+
+zipListMonoidOps :: MonoidOps [a]
+zipListMonoidOps = MonoidOps (\ xs ys -> xs ++ drop (length xs) ys) []
+
 {- instance Monoid (Endo a) where
         mempty = Endo id -}
 monoidEndo :: MonoidOps (Endo a)
 monoidEndo = MonoidOps (Prelude.<>) $ Endo id
-
-listMonoidOps :: MonoidOps [a]
-listMonoidOps = MonoidOps (++) []

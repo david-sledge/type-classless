@@ -28,8 +28,11 @@ fmap = (<$>)
 (<$) :: (?functorOps :: FunctorOps f) => Fma f
 (<$) = _fma ?functorOps
 
-functorOps :: Fmap f -> FunctorOps f
-functorOps fmapF = FunctorOps fmapF $ fmapF . const
+(<&>) :: (?functorOps :: FunctorOps f) => forall a b . f a -> (a -> b) -> f b
+(<&>) = flip fmap
+
+pkgFunctorOps :: Fmap f -> FunctorOps f
+pkgFunctorOps fmapF = FunctorOps fmapF $ fmapF . const
 
 {- class Functor f => Applicative f where
     pure  :: a -> f a
@@ -43,6 +46,7 @@ data ApplicativeOps f = ApplicativeOps
   { _pure     :: Pure f
   , _ap       :: Ap f
   , _liftA2   :: LiftA2 f
+  , _applicativeFunctorOps :: FunctorOps f
   }
 
 ap :: (?applicativeOps :: ApplicativeOps f) => Ap f
@@ -57,6 +61,9 @@ pure = _pure ?applicativeOps
 liftA2 :: (?applicativeOps :: ApplicativeOps f) => LiftA2 f
 liftA2 = _liftA2 ?applicativeOps
 
+applicativeFunctorOps :: (?applicativeOps :: ApplicativeOps f) => FunctorOps f
+applicativeFunctorOps = _applicativeFunctorOps ?applicativeOps
+
 -- liftA2 can be derived from ap and fmap
 apFmapLiftA2 :: Ap f -> Fmap f -> LiftA2 f
 apFmapLiftA2 apF fmapF = (apF .) . fmapF
@@ -69,17 +76,12 @@ apPureLiftA2 apF pureF = apFmapLiftA2 apF $ apF . pureF
 liftA2Ap :: LiftA2 f -> Ap f
 liftA2Ap liftA2F = liftA2F id
 
-applicativeOps :: Pure f -> Either (Ap f, LiftA2 f) (Either (Ap f) (LiftA2 f)) -> ApplicativeOps f
-applicativeOps pureF (Left (apF, liftA2F)) = ApplicativeOps pureF apF liftA2F
-applicativeOps pureF (Right (Left apF)) = ApplicativeOps pureF apF $ apPureLiftA2 apF pureF
-applicativeOps pureF (Right (Right liftA2F)) = ApplicativeOps pureF (liftA2Ap liftA2F) liftA2F
-
--- derive fmap from applicative operations
-applicativeFmap :: (?applicativeOps :: ApplicativeOps f) => Fmap f
-applicativeFmap = ap . pure
-
-applicativeFunctorOps :: (?applicativeOps :: ApplicativeOps f) => FunctorOps f
-applicativeFunctorOps = functorOps applicativeFmap
+pkgApplicativeOps :: Pure f -> Either (Ap f, LiftA2 f) (Either (Ap f) (LiftA2 f)) -> ApplicativeOps f
+pkgApplicativeOps pureF (Left (apF, liftA2F)) = ApplicativeOps pureF apF liftA2F . pkgFunctorOps $ apF . pureF
+pkgApplicativeOps pureF (Right (Left apF)) = ApplicativeOps pureF apF (apPureLiftA2 apF pureF) . pkgFunctorOps $ apF . pureF
+pkgApplicativeOps pureF (Right (Right liftA2F)) =
+  let apF = liftA2Ap liftA2F in
+  ApplicativeOps pureF apF liftA2F . pkgFunctorOps $ apF . pureF
 
 {- class Monad m where
        return :: a -> m a
@@ -87,36 +89,35 @@ applicativeFunctorOps = functorOps applicativeFmap
 type Bind m = forall a b . m a -> (a -> m b) -> m b
 
 data MonadOps m = MonadOps
-  { _bind           :: Bind m
-  , _applicativeOps :: ApplicativeOps m
+  { _bind                :: Bind m
+  , _monadApplicativeOps :: ApplicativeOps m
   }
 
 monadApplicativeOps :: (?monadOps :: MonadOps m) => ApplicativeOps m
-monadApplicativeOps = _applicativeOps ?monadOps
+monadApplicativeOps = _monadApplicativeOps ?monadOps
 
-(>>=) :: (?monadOps :: MonadOps f) => Bind f
+(>>=) :: (?monadOps :: MonadOps m) => Bind m
 (>>=) = _bind ?monadOps
+
+(>=>) :: (?monadOps :: MonadOps m) => (a -> m b) -> (b -> m c) -> (a -> m c)
+f >=> g = \x -> f x >>= g
 
 bindPureAp :: Bind m -> Pure m -> Ap m
 bindPureAp bindF pureF m1 m2 = bindF m1 $ bindF m2 . (pureF .)
 
 -- helper function to create instance with pure and bind implementations
-monadOps :: Pure m -> Bind m -> MonadOps m
-monadOps pureF bindF =
-  MonadOps bindF . applicativeOps pureF . Right . Left $ bindPureAp bindF pureF
+pkgMonadOps :: Pure m -> Bind m -> MonadOps m
+pkgMonadOps pureF bindF =
+  MonadOps bindF $ pkgApplicativeOps pureF (Right (Left (bindPureAp bindF pureF)))
 
 -- derive applicative and functor operations from monad operations
 return :: (?monadOps :: MonadOps f) => Pure f
-return = _pure $ _applicativeOps ?monadOps
+return = _pure monadApplicativeOps
 
-monadAp :: (?monadOps :: MonadOps f) => Ap f
-monadAp = _ap $ _applicativeOps ?monadOps
-
-monadFmap :: (?monadOps :: MonadOps f) => Fmap f
-monadFmap = let ?applicativeOps = _applicativeOps ?monadOps in applicativeFmap
+type MonoidLift m = forall a . MonoidOps (m a)
 
 newtype MonoidLiftOps m = MonoidLiftOps
-  { _monoidLiftMonoidOps :: forall a . MonoidOps (m a)
+  { _monoidLiftMonoidOps :: MonoidLift m
   }
 
 monoidLiftMonoidOps :: (?monoidLiftOps :: MonoidLiftOps m) => forall a . MonoidOps (m a)
@@ -153,41 +154,39 @@ also an Alternative.
         some_v = liftA2 (:) v many_v -}
 -- type AlternativeOps m = (ApplicativeOps m, forall a. MonoidOps (m a))
 --{-
-type VagueQuantity m = forall a. m a -> m [a]
+type VagueAmount m = forall a. m a -> m [a]
 
 data AlternativeOps m = AlternativeOps {
-  _altApplicativeOps :: ApplicativeOps m,
-  _monoidLiftOps :: MonoidLiftOps m,
-  _some :: VagueQuantity m,
-  _many :: VagueQuantity m}
+  _some :: VagueAmount m,
+  _many :: VagueAmount m,
+  _alternativeApplicativeOps :: ApplicativeOps m,
+  _alternativeMonoidLiftOps :: MonoidLiftOps m}
 --}
 
-altApplicativeOps :: (?alternativeOps :: AlternativeOps m) => ApplicativeOps m
-altApplicativeOps = _altApplicativeOps ?alternativeOps
-
-monoidLiftOps :: (?alternativeOps :: AlternativeOps m) => MonoidLiftOps m
-monoidLiftOps = _monoidLiftOps ?alternativeOps
-
-some :: (?alternativeOps :: AlternativeOps m) => VagueQuantity m
+some :: (?alternativeOps :: AlternativeOps m) => VagueAmount m
 some = _some ?alternativeOps
 
-many :: (?alternativeOps :: AlternativeOps m) => VagueQuantity m
+many :: (?alternativeOps :: AlternativeOps m) => VagueAmount m
 many = _many ?alternativeOps
 
-alternativeOps :: ApplicativeOps m -> MonoidLiftOps m -> AlternativeOps m
-alternativeOps applOps monoiLiftOps =
+pkgAlternativeOps :: ApplicativeOps m -> MonoidLiftOps m -> AlternativeOps m
+pkgAlternativeOps applOps monoidLiftOps =
   let ?applicativeOps = applOps
-      ?monoidLiftOps = monoiLiftOps in
-  AlternativeOps applOps monoiLiftOps (\ v ->
+      ?monoidLiftOps = monoidLiftOps in
+  AlternativeOps (\ v ->
       let some_v = liftA2 (:) v (some_v <|> pure [])
       in some_v) (\ v ->
       let many_v = liftA2 (:) v many_v <|> pure []
-      in many_v)
--- type MonadPlusOps m = (MonadOps m, forall a. MonoidOps (m a))
+      in many_v) applOps monoidLiftOps
 
 {- class MonadTrans t where
     -- | Lift a computation from the argument monad to the constructed monad.
     lift :: (Monad m) => m a -> t m a -}
--- no need for a data or newtype for a single function (perhaps?)
-type Lift t = forall m a . (?monadOps :: MonadOps m) => m a -> t m a
-type Liftt t = forall m a . m a -> t m a
+type Lift t = forall m a . (?monadOps::MonadOps m) => m a -> t m a
+
+newtype LiftOp t = LiftOp {
+  _lift :: Lift t
+}
+
+lift :: (?liftOp :: LiftOp t) => Lift t
+lift = _lift ?liftOp
