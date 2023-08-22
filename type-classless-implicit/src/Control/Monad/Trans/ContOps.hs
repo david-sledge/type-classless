@@ -13,40 +13,39 @@ import Control.Monad.State.Strict (StateT(..), State, runState, evalState,
     execState)
 import Data.Functor.Identity
 
-{- instance MonadTrans (ContT r) where
-       lift m = ContT (m >>=) -}
-contTMonadTransOp :: (?monadOps::MonadOps m) => m a -> ContT r m a
-contTMonadTransOp m = ContT (m >>=)
-
 {- instance Monad (ContT r m) where
     return x = ContT ($ x)
     m >>= k  = ContT $ \ c -> runContT m (\ x -> runContT (k x) c) -}
---contTMonadOps :: MonadOp (ContT r m)
+
 contTMonadOps :: MonadOps (ContT r m)
 contTMonadOps = pkgMonadOps (\x -> ContT ($ x)) $
-    \m k -> ContT $ \ c -> runContT m (\ x -> runContT (k x) c)
+    \m k -> ContT $ \ c -> runContT m $ flip runContT c . k
+
+{- instance MonadTrans (ContT r) where
+       lift m = ContT (m >>=) -}
+contTLiftOp :: (?monadOps::MonadOps m) => LiftOp (ContT r)
+contTLiftOp = LiftOp $ ContT . (>>=)
 
 {- evalContT :: (Monad m) => ContT r m r -> m r
    evalContT m = runContT m return -}
---evalContT :: MonadOp m -> ContT r m r -> m r
 evalContT :: (?monadOps::MonadOps m) => ContT r m r -> m r
-evalContT m = runContT m return
+evalContT m = runContT m $ _pure monadApplicativeOps
 
---mapContT :: (m r -> m r) -> ContT r m a -> ContT r m a
+mapContT :: (m r -> m r) -> ContT r m a -> ContT r m a
 mapContT f m = ContT $ f . runContT m
 
---withContT :: ((b -> m r) -> (a -> m r)) -> ContT r m a -> ContT r m b
+withContT :: ((a1 -> m r) -> a2 -> m r) -> ContT r m a2 -> ContT r m a1
 withContT f m = ContT $ runContT m . f
 
---callCC :: ((a -> ContT r m b) -> ContT r m a) -> ContT r m a
---callCC :: CallCC (ContT r m)
+type CallCC m = forall a b . ((a -> m b) -> m a) -> m a
+
+callCC :: CallCC (ContT r m)
 callCC f = ContT $ \ c -> runContT (f $ \ x -> ContT . const $ c x) c
 
 {- resetT :: (Monad m) => ContT r m r -> ContT r' m r
    resetT = lift . evalContT -}
---resetT :: MonadOp m -> ContT r m r -> ContT r' m r
 resetT :: (?monadOps::MonadOps m) => ContT a m a -> ContT r m a
-resetT = contTMonadTransOp . evalContT
+resetT = _lift contTLiftOp . evalContT
 
 {- shiftT :: (Monad m) => ((a -> m r) -> ContT r m r) -> ContT r m a
    shiftT f = ContT (evalContT . f) -}

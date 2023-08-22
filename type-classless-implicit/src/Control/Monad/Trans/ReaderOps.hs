@@ -10,15 +10,15 @@ import Control.Monad.Reader (ReaderT(..))
 import Data.Functor.Identity
 
 {- instance MonadTrans ReaderT where
-       lift m = ReaderT (const m) -}
+    lift m = ReaderT (const m) -}
 readerTLift :: LiftOp (ReaderT r)
 readerTLift = LiftOp $ ReaderT . const
 
 {- instance (Monad m) => Monad (ReaderT s m) where
-       return = lift . return
-       m >>= k = ReaderT $ \r -> do
-           a <- runReaderT m r
-           runReaderT (k a) r -}
+    return = lift . return
+    m >>= k = ReaderT $ \r -> do
+        a <- runReaderT m r
+        runReaderT (k a) r -}
 readerTMonadOps :: (?monadOps :: MonadOps m) => MonadOps (ReaderT r m)
 readerTMonadOps =
   let ?applicativeOps = monadApplicativeOps
@@ -29,13 +29,13 @@ readerTMonadOps =
       (>>=) (runReaderT m r) $ \a ->
       runReaderT (k a) r
 
+{- class Monad m => Monadreader r m | m -> r where
+    ask    :: m r
+    local  :: (r -> r) -> m a -> m a
+    reader :: (r -> a) -> m a -}
 type Local m r = forall a . (r -> r) -> m a -> m a
 type ReaderF m r = forall a . (r -> a) -> m a
 
-{- class Monad m => Monadreader r m | m -> r where
-       ask    :: m r
-       local  :: (r -> r) -> m a -> m a
-       reader :: (r -> a) -> m a -}
 data MonadReaderOps r m = MonadReaderOps
   { _ask                  :: m r
   , _local                :: Local m r

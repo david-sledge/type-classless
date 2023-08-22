@@ -9,35 +9,8 @@ import Control.Monad.Misc
 import Control.Monad.State.Strict (StateT(StateT, runStateT))
 import Data.FixOp
 import Data.Functor.Identity
-
-type StateOp s m = forall a . (s -> (a, s)) -> m a
-
-{- class Monad m => MonadState s m | m -> s where
-       get :: m s
-       put :: s -> m ()
-       state :: (s -> (a, s)) -> m a -}
-data MonadStateOps s m = MonadStateOps
-  { _state            :: StateOp s m
-  , _monadStateSubOps :: (MonadOps m, ApplicativeOps m, FunctorOps m)
-  }
-
-state :: (?monadStateOps :: MonadStateOps s m) => StateOp s m
-state = _state ?monadStateOps
-
-get :: (?monadStateOps::MonadStateOps s m) => m s
-get = state $ \ s -> (s, s)
-
-modifyAnd :: (?monadStateOps::MonadStateOps s m) => (s -> s) -> (s -> a) -> m a
-modifyAnd f andF = state $ \s -> let s' = f s in (andF s', s')
-
-putAnd :: (?monadStateOps::MonadStateOps s m) => s -> a -> m a
-putAnd s a = modifyAnd (const s) (const a)
-
-modify :: (?monadStateOps::MonadStateOps s m) => (s -> s) -> m ()
-modify f = modifyAnd f $ const ()
-
-put :: (?monadStateOps::MonadStateOps s m) => s -> m ()
-put s = putAnd s ()
+import Control.Monad.Trans.ReaderOps
+import Control.Monad.Reader (ReaderT)
 
 -- StateT monad transformer
 
@@ -88,9 +61,10 @@ pkgLazyStateTMonadOps =
     StateT $ runStateT m >=> \ ~(a, s') -> runStateT (k a) s'
 
 -- Reverse
-pkgRevStateTMonadOps :: (?monadOps :: MonadOps m, ?mfixOp :: MfixOp m) => (MonadOps (StateT b1 m), MfixOp (StateT b2 m))
+pkgRevStateTMonadOps :: (?monadOps :: MonadOps m, ?mfixOp :: MfixOp m) => (MonadOps (StateT s1 m), MfixOp (StateT s2 m))
 pkgRevStateTMonadOps =
   let ?applicativeOps = monadApplicativeOps in
+  let ?functorOps = applicativeFunctorOps in
   (
 {- instance MonadFix m => Monad (StateT s m) where
     m >>= f = StateT $ \s -> do
@@ -102,10 +76,10 @@ pkgRevStateTMonadOps =
     \ m f ->
       StateT $ \ s ->
         mfix (\ ~(s', _) ->
-          runStateT m s' >>= \ (x, s0'') ->
+          runStateT m s' >>= \ (x, s'') ->
           runStateT (f x) s >>= \ (x', s0') ->
-          pure (s0', (x', s0''))
-        ) >>= (\ (_, r) -> pure r),
+          pure (s0', (x', s''))
+        ) <&> snd,
 {- instance MonadFix m => MonadFix (StateT s m) where
     mfix f = StateT $ \s ->
       mfix (\ ~(x, _) -> runStateT (f x) s) -}
@@ -115,10 +89,10 @@ pkgRevStateTMonadOps =
 stateMonadOps :: MonadOps (StateT s Identity)
 stateMonadOps = let ?monadOps = identityMonadOps in pkgStrictStateTMonadOps
 
-lazyStateMonadOps :: MonadOps (StateT b1 Identity)
+lazyStateMonadOps :: MonadOps (StateT s Identity)
 lazyStateMonadOps = let ?monadOps = identityMonadOps in pkgLazyStateTMonadOps
 
-revStateMonadFixOps :: (MonadOps (StateT b1 Identity), MfixOp (StateT b2 Identity))
+revStateMonadFixOps :: (MonadOps (StateT s1 Identity), MfixOp (StateT s2 Identity))
 revStateMonadFixOps =
   let ?monadOps = identityMonadOps
       ?mfixOp = identityFixLiftOp
@@ -132,57 +106,101 @@ stateTLift :: LiftOp (StateT s)
 stateTLift = LiftOp $ \ m -> StateT $ \ s ->
   m >>= \ a -> return (a, s)
 
-pkgMonadStateOps :: (?applicativeOps::ApplicativeOps m) => (MonadOps (StateT s m), ApplicativeOps (StateT s m), FunctorOps (StateT s m)) -> MonadStateOps s (StateT s m)
-pkgMonadStateOps = MonadStateOps (StateT . (pure .))
+{- class Monad m => MonadState s m | m -> s where
+    get :: m s
+    put :: s -> m ()
+    state :: (s -> (a, s)) -> m a -}
+type StateOp s m = forall a . (s -> (a, s)) -> m a
+
+data MonadStateOps s m = MonadStateOps
+  { _state            :: StateOp s m
+  , _monadStateMonadOps :: MonadOps m
+  }
+
+monadStateMonadOps :: (?monadStateOps :: MonadStateOps s m) => MonadOps m
+monadStateMonadOps = _monadStateMonadOps ?monadStateOps
+
+state :: (?monadStateOps :: MonadStateOps s m) => StateOp s m
+state = _state ?monadStateOps
+
+get :: (?monadStateOps::MonadStateOps s m) => m s
+get = state $ \ s -> (s, s)
+
+modifyAnd :: (?monadStateOps::MonadStateOps s m) => (s -> s) -> (s -> a) -> m a
+modifyAnd f andF = state $ \s -> let s' = f s in (andF s', s')
+
+putAnd :: (?monadStateOps::MonadStateOps s m) => s -> a -> m a
+putAnd s a = modifyAnd (const s) (const a)
+
+modify :: (?monadStateOps::MonadStateOps s m) => (s -> s) -> m ()
+modify f = modifyAnd f $ const ()
+
+put :: (?monadStateOps::MonadStateOps s m) => s -> m ()
+put s = putAnd s ()
+
+pkgStateTMonadStateOps :: (?applicativeOps::ApplicativeOps m) => MonadOps (StateT s m) -> MonadStateOps s (StateT s m)
+pkgStateTMonadStateOps = MonadStateOps (StateT . (pure .))
 
 {- instance (Monad m) => MonadState s (StateT s m) where
     state = state -- from Control.Monad.Trans.State -}
 strictStateTMonadStateOps :: (?monadOps :: MonadOps m) => MonadStateOps s (StateT s m)
 strictStateTMonadStateOps =
-  let ?applicativeOps = monadApplicativeOps in pkgMonadStateOps (
-    let stateTApplicativeOps = _monadApplicativeOps pkgStrictStateTMonadOps
-    in (pkgStrictStateTMonadOps, stateTApplicativeOps, _applicativeFunctorOps stateTApplicativeOps))
+  let ?applicativeOps = monadApplicativeOps in pkgStateTMonadStateOps pkgStrictStateTMonadOps
 
 lazyStateTMonadStateOps :: (?monadOps :: MonadOps m) => MonadStateOps s (StateT s m)
 lazyStateTMonadStateOps =
-  let ?applicativeOps = monadApplicativeOps in pkgMonadStateOps (
-    let stateTApplicativeOps = _monadApplicativeOps pkgLazyStateTMonadOps
-    in (pkgLazyStateTMonadOps, stateTApplicativeOps, _applicativeFunctorOps stateTApplicativeOps))
+  let ?applicativeOps = monadApplicativeOps in pkgStateTMonadStateOps pkgLazyStateTMonadOps
 
 revStateTMonadStateOps :: (?monadOps :: MonadOps m, ?mfixOp :: MfixOp m) => (MonadStateOps s1 (StateT s1 m), MfixOp (StateT s2 m))
 revStateTMonadStateOps =
   let ?applicativeOps = monadApplicativeOps in
-  let (monadOps, mfixOp) = pkgRevStateTMonadOps in (pkgMonadStateOps (
-    let stateTApplicativeOps = _monadApplicativeOps monadOps
-    in (monadOps, stateTApplicativeOps, _applicativeFunctorOps stateTApplicativeOps)), mfixOp)
-
-{- instance (MonadReader r m) => MonadReader r (StateT s m) where
-       ask = lift ask
-       local = \f m -> StateT $ local f . runStateT m
-       reader = lift . reader -}
---monadReader'StateTOp ::
---    MonadReaderOp r m -> MonadReaderOp r (StateT s m)
--- stateTMonadReaderOps mrOps = let
---     mOps = _monadReaderMonadOps mrOps
---     lift = stateTLift mOps
---   in
---   MonadReaderOps (lift $ _ask mrOps)
---     (\f m -> StateT $ _local mrOps f . runStateT m)
---     (lift . _reader mrOps)
---     $ pkgStrictStateTMonadOps mOps
+  let (monadOps, mfixOp) = pkgRevStateTMonadOps in (pkgStateTMonadStateOps monadOps, mfixOp)
 
 {- instance (MonadState s m) => MonadState s (ReaderT r m) where
-       get   = lift get
-       put   = lift . put
-       state = lift . state -}
---monadState'ReaderTOp :: MonadStateOp s m -> MonadStateOp s (ReaderT r m)
--- readerTMonadStateOps msOps = let
---     mOps = _monadStateMonadOps msOps
---     lift = _lift readerTMonadTransOp mOps
---   in
---   MonadStateOps
---     (\f -> lift . _modifyAnd msOps f)
---     (lift $ _get msOps)
---     (lift . _state msOps)
---     $ readerTMonadOps mOps
---}
+    state = lift . state -}
+readerTMonadStateOps :: (?monadStateOps::MonadStateOps s m) => MonadStateOps s (ReaderT r m)
+readerTMonadStateOps =
+  let ?monadOps = monadStateMonadOps
+      ?liftOp = readerTLift
+  in
+  MonadStateOps (lift . state) readerTMonadOps
+
+{- instance (MonadReader r m) => MonadReader r (StateT s m) where
+    ask = lift ask
+    local = \f m -> StateT $ local f . runStateT m
+    reader = lift . reader -}
+strictStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m) => MonadReaderOps r (StateT s m)
+strictStateTMonadReaderOps = let
+    ?monadOps = monadReaderMonadOps
+    ?liftOp = stateTLift
+  in
+  MonadReaderOps
+    (lift ask)
+    (\f m -> StateT $ local f . runStateT m)
+    (lift . reader)
+    pkgStrictStateTMonadOps
+
+lazyStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m) => MonadReaderOps r (StateT s m)
+lazyStateTMonadReaderOps = let
+    ?monadOps = monadReaderMonadOps
+    ?liftOp = stateTLift
+  in
+  MonadReaderOps
+    (lift ask)
+    (\f m -> StateT $ local f . runStateT m)
+    (lift . reader)
+    pkgLazyStateTMonadOps
+
+revStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m, ?mfixOp::MfixOp m) => (MonadReaderOps r (StateT s1 m), MfixOp (StateT s2 m))
+revStateTMonadReaderOps = let
+    ?monadOps = monadReaderMonadOps
+    ?liftOp = stateTLift
+  in
+  let (monadOps, mfixOp) = pkgRevStateTMonadOps in
+  (
+    MonadReaderOps
+      (lift ask)
+      (\f m -> StateT $ local f . runStateT m)
+      (lift . reader)
+      monadOps,
+    mfixOp)
