@@ -29,7 +29,7 @@ library
                    , Control.Monad.Trans.StateOps
                    , Data.FixOp
                    , Data.MonoidOps
-                   , Data.TraversableOp
+                   , Data.TraversableOps
     ghc-options:     -Wall
 
     if !os(windows)

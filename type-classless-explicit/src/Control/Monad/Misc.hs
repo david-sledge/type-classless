@@ -1,77 +1,120 @@
+{-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE ImpredicativeTypes #-}
+
 module Control.Monad.Misc where
 
-import Control.MonadOp
-import Control.Monad.FixOp
-import Control.Monad.PlusOp
+import Control.MonadOps
+import Data.FixOp
 import Data.Functor.Identity
 import Data.Function ( fix )
-import Data.MonoidOp
-import System.IO
+import Data.MonoidOps
+import Control.Applicative (Const(Const))
+import Data.Coerce (coerce)
 
-monadFix'IOOp    :: MonadFixOp    IO
-monad'IOOp       :: MonadOp       IO
-applicative'IOOp :: ApplicativeOp IO
-monadFix'IOOp@(MonadFixOp {
-    _monad'MFOp = monad'IOOp@(MonadOp {
-      _applicative = applicative'IOOp
-    })
-  }) =
-  monadFixOp return (>>=) fixIO
+ioMonadOps :: MonadOps IO
+ioMonadOps = pkgMonadOps Prelude.return (Prelude.>>=)
 
---functor'IOOp     :: FunctorOp     IO
---functor'IOOp = _functor'A applicative'IOOp
+ioApplicativeOps :: ApplicativeOps IO
+ioApplicativeOps = _monadApplicativeOps ioMonadOps
 
-monadFix'ListOp    :: MonadFixOp    []
-monad'ListOp       :: MonadOp       []
-applicative'ListOp :: ApplicativeOp []
-monadFix'ListOp@(MonadFixOp {
-    _monad'MFOp = monad'ListOp@(MonadOp {
-      _applicative = applicative'ListOp
-    })
-  }) =
-  monadFixOp return (>>=) $ fix (\mfix f ->
+listFunctorOps :: FunctorOps []
+listFunctorOps = pkgFunctorOps $
+  let g accf f (x : xs) = g (accf . (f x:)) f xs
+      g accf _ _ = accf []
+  in g id
+
+listMonadOps :: MonadOps []
+listMonadOps =
+  let monadOps = pkgMonadOps (:[]) $
+        let g accf (x : xs) k = g (accf . (k x ++)) xs k
+            g accf _ _ = accf []
+        in g id
+  in monadOps {_monadApplicativeOps = (_monadApplicativeOps monadOps) { _applicativeFunctorOps = listFunctorOps }}
+
+listApplicativeOps :: ApplicativeOps []
+listApplicativeOps = _monadApplicativeOps listMonadOps
+
+listAlternativeOps :: AlternativeOps []
+listAlternativeOps = pkgAlternativeOps listApplicativeOps $ MonoidLiftOps listMonoidOps
+
+--{-
+listFixLiftOp :: MfixOp []
+listFixLiftOp = MfixOp $ fix
+  ( \lfix f ->
       case fix (f . head) of
-      []    -> []
-      (x:_) -> x : mfix (tail . f))
+      x : _ -> x : lfix (tail . f)
+      _     -> []
+  )
+--}
 
---functor'ListOp     :: FunctorOp     []
---functor'ListOp = _functor'A applicative'ListOp
+{- instance Applicative ZipList where
+    pure x = ZipList (repeat x)
+    liftA2 f (ZipList xs) (ZipList ys) = ZipList (zipWith f xs ys) -}
+zipListApplicativeOps :: ApplicativeOps []
+zipListApplicativeOps = pkgApplicativeOps repeat . Right $ Right zipWith
 
-monoid'ListOp = MonoidOp (++) []
+{- instance Alternative ZipList where
+   empty = ZipList []
+   ZipList xs <|> ZipList ys = ZipList (xs ++ drop (length xs) ys) -}
+zipListAlternative :: AlternativeOps []
+zipListAlternative = pkgAlternativeOps zipListApplicativeOps $ MonoidLiftOps zipListMonoidOps
 
-{- instance Monad (Identity) where
-       return = Identity
-       m >>= k = k $ runIdentity m -}
-monadFix'IdentityOp    :: MonadFixOp    Identity
-monad'IdentityOp       :: MonadOp       Identity
-applicative'IdentityOp :: ApplicativeOp Identity
-monadFix'IdentityOp@(MonadFixOp {
-    _monad'MFOp = monad'IdentityOp@(MonadOp {
-      _applicative = applicative'IdentityOp
-    })
-  }) =
-  monadFixOp Identity (\m k -> k $ runIdentity m) $ \f ->
-    Identity . fix $ runIdentity . f
+identityMonadOps :: MonadOps Identity
+identityMonadOps = pkgMonadOps Identity (\m k -> k $ runIdentity m)
 
---functor'IdentityOp     :: FunctorOp     Identity
---functor'IdentityOp = _functor'A applicative'IdentityOp
+identityApplicativeOps :: ApplicativeOps Identity
+identityApplicativeOps = _monadApplicativeOps identityMonadOps
 
---monadPlus'MaybeOp :: MonadPlusOp Maybe
-monadPlus'MaybeOp = monadPlusOp (
-      \ma mb ->
-        case ma of
-        Nothing -> mb
-        _ -> ma )
-    Nothing Just $ \mx f ->
-      case mx of
-      Just x -> f x
-      _ -> Nothing
+identityFunctorOp :: Fmap Identity
+identityFunctorOp f = Identity . f . runIdentity
 
---monoid'MaybeOp :: MonoidOp (Maybe a)
-monoid'MaybeOp = snd $ monadPlus'MaybeOp
+assocIdentityAssoc :: Assoc a -> Assoc (Identity a)
+assocIdentityAssoc assocF (Identity x) (Identity y) = Identity (assocF x y)
 
---monad'MaybeOp :: MonadOp Maybe
-monad'MaybeOp = fst $ monadPlus'MaybeOp
+monoidIdentityMonoidOps :: MonoidOps a -> MonoidOps (Identity a)
+monoidIdentityMonoidOps monoidOps =
+  MonoidOps (assocIdentityAssoc $ _assoc monoidOps)
+    . Identity $ _ident monoidOps
+
+identityFixLiftOp :: MfixOp Identity
+identityFixLiftOp = MfixOp $ \ f -> Identity . fix $ runIdentity . f
+
+maybeMonadOps :: MonadOps Maybe
+maybeMonadOps = pkgMonadOps Just $ \mx f ->
+    case mx of
+    Just x -> f x
+    _ -> Nothing
+
+maybeMonoidLiftOps :: MonoidOps (Maybe a)
+maybeMonoidLiftOps = MonoidOps
+  ( \ma mb ->
+      case ma of
+      Nothing -> mb
+      _ -> ma
+  ) Nothing
+
+{-
+instance Semigroup a => Semigroup (Maybe a) where
+    Nothing <> b       = b
+    a       <> Nothing = a
+    Just a  <> Just b  = Just (a <> b)
+
+instance Semigroup a => Monoid (Maybe a) where
+    mempty = Nothing
+-}
+assocMaybeMonoidOps :: Assoc a -> MonoidOps (Maybe a)
+assocMaybeMonoidOps assocF = MonoidOps
+    ( \xm ym ->
+        case xm of
+        Just x ->
+          case ym of
+          Just y -> Just (assocF x y)
+          _ -> xm
+        _ -> ym
+    ) Nothing
+
+assocMaybeAssoc :: Assoc a -> Assoc (Maybe a)
+assocMaybeAssoc assocF = _assoc $ assocMaybeMonoidOps assocF
 
 {-
 https://gitlab.haskell.org/ghc/ghc/-/issues/9588
@@ -81,18 +124,27 @@ instance (Error e) => MonadPlus (Either e) where
     m      `mplus` _ = m
 
 Let's define the Either MonadPlus operations so that they're more generalized
-so that the Error constraint (nor any other typeclass constraint) is not needed.
+so that the Error constraint (nor any other typeclass constraint) is not
+needed.
 -}
-monadPlusEitherOp :: a -> (MonadOp (Either a), MonoidOp (Either a b))
-monadPlusEitherOp a = monadPlusOp
+monoidLiftEitherOps :: e -> MonoidOps (Either e a)
+monoidLiftEitherOps e = MonoidOps
   ( \b c ->
       case b of
       Left _ -> c
       _ -> b
-  ) (Left a) Right
-  (
-    \b k ->
-      case b of
-      Left l -> Left l
-      Right r -> k r
-  )
+  ) $ Left e
+
+--semigroupMonoidOps :: SemigroupOp a -> SemigroupOp (m a)
+--semigroupMonoidOps sOp = 
+
+{- instance Monoid m => Applicative (Const m) where
+  pure _ = Const mempty
+  liftA2 _ (Const x) (Const y) = Const (x `mappend` y)
+  (<*>) = coerce (mappend :: m -> m -> m) -}
+constApplicativeOps :: MonoidOps m -> ApplicativeOps (Const m)
+constApplicativeOps monoidOps = pkgApplicativeOps
+  (const . Const $ _ident monoidOps) $
+  Left (
+    coerce $ _assoc monoidOps,
+    const $ \ (Const a) (Const b) -> Const $ _assoc monoidOps a b)

@@ -28,13 +28,12 @@ execStateT = (fmap snd .) . runStateT
 execLazyStateT :: (?functorOps::FunctorOps m) => StateT s m a -> s -> m s
 execLazyStateT = let snd' ~(_, s) = s in (fmap snd' .) . runStateT
 
-pkgStateTMonadOps :: (?monadOps :: MonadOps m) => Bind (StateT s m) -> MonadOps (StateT s m)
-pkgStateTMonadOps bindF =
-  let ?applicativeOps = monadApplicativeOps in
-  pkgMonadOps
+-- stub for the three different StateT monad definitions. pure is the same for all three, but bind is different
+pkgStateTMonadOps :: (?applicativeOps :: ApplicativeOps m) => Bind (StateT s m) -> MonadOps (StateT s m)
+pkgStateTMonadOps =
+  pkgMonadOps $
     -- :: Pure (StateT s m)
-    (\ a -> StateT $ \ s -> pure (a, s))
-    bindF
+    StateT . ((pure .) . (, ))
 
 -- Strict
 {- instance (Monad m) => Monad (StateT s m) where
@@ -102,8 +101,8 @@ revStateMonadFixOps =
     lift m = StateT $ \s -> do
         a <- m
         return (a, s) -}
-stateTLift :: LiftOp (StateT s)
-stateTLift = LiftOp $ \ m -> StateT $ \ s ->
+stateTLiftOp :: LiftOp (StateT s)
+stateTLiftOp = LiftOp $ \ m -> StateT $ \ s ->
   m >>= \ a -> return (a, s)
 
 {- class Monad m => MonadState s m | m -> s where
@@ -161,7 +160,7 @@ revStateTMonadStateOps =
 readerTMonadStateOps :: (?monadStateOps::MonadStateOps s m) => MonadStateOps s (ReaderT r m)
 readerTMonadStateOps =
   let ?monadOps = monadStateMonadOps
-      ?liftOp = readerTLift
+      ?liftOp = readerTLiftOp
   in
   MonadStateOps (lift . state) readerTMonadOps
 
@@ -172,7 +171,7 @@ readerTMonadStateOps =
 strictStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m) => MonadReaderOps r (StateT s m)
 strictStateTMonadReaderOps = let
     ?monadOps = monadReaderMonadOps
-    ?liftOp = stateTLift
+    ?liftOp = stateTLiftOp
   in
   MonadReaderOps
     (lift ask)
@@ -183,7 +182,7 @@ strictStateTMonadReaderOps = let
 lazyStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m) => MonadReaderOps r (StateT s m)
 lazyStateTMonadReaderOps = let
     ?monadOps = monadReaderMonadOps
-    ?liftOp = stateTLift
+    ?liftOp = stateTLiftOp
   in
   MonadReaderOps
     (lift ask)
@@ -194,7 +193,7 @@ lazyStateTMonadReaderOps = let
 revStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m, ?mfixOp::MfixOp m) => (MonadReaderOps r (StateT s1 m), MfixOp (StateT s2 m))
 revStateTMonadReaderOps = let
     ?monadOps = monadReaderMonadOps
-    ?liftOp = stateTLift
+    ?liftOp = stateTLiftOp
   in
   let (monadOps, mfixOp) = pkgRevStateTMonadOps in
   (

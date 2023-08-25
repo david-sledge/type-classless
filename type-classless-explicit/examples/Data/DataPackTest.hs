@@ -4,7 +4,7 @@ module Example.Data.DataPackTest where
 
 import Prelude hiding ((>>=), (>>))
 import Control.MonadOp
-import Control.Monad.FixOp
+import Data.FixOp
 import Control.Monad.Misc
 import Example.Data.DataPack
 import qualified Data.ByteString.Lazy as C

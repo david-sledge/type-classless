@@ -1,7 +1,7 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 
-module Data.TraversableOp where
+module Data.TraversableOps where
 
 import Prelude hiding (pure, fmap, foldr, traverse)
 import Control.MonadOps (fmap, liftA2, pure, ApplicativeOps, FunctorOps)

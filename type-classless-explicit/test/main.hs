@@ -1,7 +1,7 @@
 {-# LANGUAGE Rank2Types #-}
 
 import Control.MonadOp
-import Control.Monad.FixOp
+import Data.FixOp
 import Control.Monad.Misc
 import Control.Monad.Trans.Reader (ReaderT(..), Reader, runReader)
 import Control.Monad.Trans.ReaderOp
@@ -10,7 +10,7 @@ import Control.Monad.Trans.State.Strict (StateT(..), State, runState, evalState,
 import Data.Function
 import Data.Functor.Identity
 import Example.Data.DataPackTest
-import Data.TraversableOp
+import Data.TraversableOps
 import System.Exit (exitFailure)
 import System.Timeout (timeout)
 import Control.Monad.Trans.StateOp

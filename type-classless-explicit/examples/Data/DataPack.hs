@@ -220,8 +220,8 @@ modify = _modify msOp
 
 m >> k = m >>= const k
 
-stateReaderContT = stateTLift monad'ReaderContTOp .
-  readerTLift monad'ContTOp . ContT
+stateReaderContT = stateTLiftOp monad'ReaderContTOp .
+  readerTLiftOp monad'ContTOp . ContT
 
 catcherAsk f = ask >>= f . catchers
 
