@@ -44,9 +44,9 @@ type SequenceA t = forall f a . (?applicativeOps :: ApplicativeOps f) =>
   sequenceA :: Applicative f => t (f a) -> f (t a)
   sequenceA = traverse id -}
 data TraversableOps t = TraversableOps {
+  _traversableFunctorOps :: FunctorOps t,
   _traverse :: Traverse t,
   _sequenceA :: SequenceA t,
-  _traversableFunctorOps :: FunctorOps t,
   _traversableFoldableOps :: FoldableOps t
 }
 
@@ -71,9 +71,13 @@ traversableFoldableOps traverseF = pkgFoldableOps . Right . Right $
   (getConst .) . traverseF . (Const .)
 
 pkgTraversableOps :: (?functorOps :: FunctorOps t) => Either (Traverse t, SequenceA t) (Either (Traverse t) (SequenceA t)) -> TraversableOps t
-pkgTraversableOps (Left (traverseF, sequenceAF)) = TraversableOps traverseF sequenceAF ?functorOps $ traversableFoldableOps traverseF
-pkgTraversableOps (Right (Left traverseF)) = TraversableOps traverseF (traverseF id) ?functorOps $ traversableFoldableOps traverseF
-pkgTraversableOps (Right (Right sequenceAF)) = TraversableOps (sequenceATraverse sequenceAF) sequenceAF ?functorOps . traversableFoldableOps $ sequenceATraverse sequenceAF
+pkgTraversableOps =
+  let f = TraversableOps ?functorOps in
+  either
+    (\ (traverseF, sequenceAF) -> f traverseF sequenceAF $ traversableFoldableOps traverseF)
+    (either
+      (\ traverseF -> f traverseF (traverseF id) $ traversableFoldableOps traverseF)
+      (\ sequenceAF -> f (sequenceATraverse sequenceAF) sequenceAF . traversableFoldableOps $ sequenceATraverse sequenceAF))
 
 {- instance Traversable [] where
        traverse f = List.foldr cons_f (pure [])

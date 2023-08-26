@@ -5,13 +5,11 @@ module Control.Monad.Trans.ContOps where
 
 import Prelude hiding (return, (>>=))
 import Control.MonadOps
-import Control.Monad.Cont (ContT(..), Cont, cont, runCont)
-import Control.Monad.Reader (ReaderT(..), Reader, runReader)
+import Control.Monad.Cont (ContT(..))
+import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Trans.ReaderOps
 import Control.Monad.Trans.StateOps
-import Control.Monad.State.Strict (StateT(..), State, runState, evalState,
-    execState)
-import Data.Functor.Identity
+import Control.Monad.State.Strict (StateT(..))
 
 {- instance Monad (ContT r m) where
     return x = ContT ($ x)
@@ -23,7 +21,7 @@ contTMonadOps = pkgMonadOps (\x -> ContT ($ x)) $
 
 {- instance MonadTrans (ContT r) where
        lift m = ContT (m >>=) -}
-contTLiftOp :: (?monadOps::MonadOps m) => LiftOp (ContT r)
+contTLiftOp :: LiftOp (ContT r)
 contTLiftOp = LiftOp $ ContT . (>>=)
 
 {- evalContT :: (Monad m) => ContT r m r -> m r
@@ -49,7 +47,6 @@ resetT = _lift contTLiftOp . evalContT
 
 {- shiftT :: (Monad m) => ((a -> m r) -> ContT r m r) -> ContT r m a
    shiftT f = ContT (evalContT . f) -}
---shiftT :: MonadOp m -> ((a -> m r) -> ContT r m r) -> ContT r m a
 shiftT :: (?monadOps::MonadOps m) => ((a -> m r) -> ContT r m r) -> ContT r m a
 shiftT f = ContT (evalContT . f)
 
@@ -57,38 +54,36 @@ shiftT f = ContT (evalContT . f)
     ask   = lift ask
     local = Cont.liftLocal ask local
     reader = lift . reader -}
---contTMonadReaderOps :: MonadReaderOp r' m -> MonadReaderOp r' (ContT r m)
--- contTMonadReaderOps mrOps = let
---     lift = _lift contTMonadTransOp $ _monadReaderMonadOps mrOps
---   in
---   MonadReaderOps
---     (lift $ _ask mrOps)
---     (\f m -> ContT $ _local mrOps f . runContT m)
---     (lift . _reader mrOps)
---     contTMonadOps
+contTMonadReaderOps :: (?monadReaderOps :: MonadReaderOps r' m) => MonadReaderOps r' (ContT r m)
+contTMonadReaderOps =
+  let ?monadOps = monadReaderMonadOps in
+  let ?liftOp = contTLiftOp in
+  MonadReaderOps
+    contTMonadOps
+    (lift ask)
+    (\f m -> ContT $ local f . runContT m)
+    (lift . reader)
 
 {- instance MonadState s m => MonadState s (ContT r m) where
     get = lift get
     put = lift . put
     state = lift . state -}
---contTMonadStateOps :: MonadStateOp s m -> MonadStateOp s (ContT r m)
--- contTMonadStateOps msOp = let
---     lift = _lift contTMonadTransOp $ _monadStateMonadOps msOp
---   in MonadStateOps (\f -> lift . _modifyAnd msOp f)
---     (lift $ _get msOp)
---     (lift . _state msOp)
---     contTMonadOps
+contTMonadStateOps :: (?monadStateOps :: MonadStateOps s m) => MonadStateOps s (ContT r m)
+contTMonadStateOps =
+  let ?monadOps = monadStateMonadOps in
+  let ?liftOp = contTLiftOp in
+  MonadStateOps contTMonadOps (lift . state)
 
---liftCallCC'Reader :: CallCC m -> CallCC (ReaderT r m)
--- liftCallCC'Reader callCC f = ReaderT $ \ r ->
---     callCC $ \ c ->
---     runReaderT (f (ReaderT . const . c)) r
+callCCReaderT :: CallCC m -> CallCC (ReaderT r m)
+callCCReaderT callCCF f = ReaderT $ \ r ->
+    callCCF $ \ c ->
+    runReaderT (f (ReaderT . const . c)) r
 
 {- liftCallCC'State'
   :: ((((a,s) -> m (b,s)) -> m (a,s)) -> m (a,s))
     -> ((a -> (StateT s m) b) -> (StateT s m) a)
     -> (StateT s m) a -}
---liftCallCC'State' :: CallCC m -> CallCC (StateT s m)
--- liftCallCC'State' callCC f = StateT $ \ s ->
---     callCC $ \ c ->
---     runStateT (f (\ a -> StateT $ \ s' -> c (a, s'))) s
+callCCStateT :: CallCC m -> CallCC (StateT s m)
+callCCStateT callCCF f = StateT $ \ s ->
+    callCCF $ \ c ->
+    runStateT (f (\ a -> StateT $ \ s' -> c (a, s'))) s

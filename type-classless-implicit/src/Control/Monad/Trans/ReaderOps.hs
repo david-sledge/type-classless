@@ -37,11 +37,11 @@ type Local m r = forall a . (r -> r) -> m a -> m a
 type ReaderF m r = forall a . (r -> a) -> m a
 
 data MonadReaderOps r m = MonadReaderOps
-  { _ask                  :: m r
-  , _local                :: Local m r
-  , _reader               :: ReaderF m r
-  , _monadReaderMonadOps  :: MonadOps m
-  }
+  {
+    _monadReaderMonadOps  :: MonadOps m,
+    _ask                  :: m r,
+    _local                :: Local m r,
+    _reader               :: ReaderF m r }
 
 ask :: (?monadReaderOps :: MonadReaderOps r m) => m r
 ask = _ask ?monadReaderOps
@@ -57,18 +57,18 @@ monadReaderMonadOps = _monadReaderMonadOps ?monadReaderOps
 
 pkgMonadReaderOps :: (?monadOps::MonadOps m) => Local m r -> Either (m r, ReaderF m r) (Either (m r) (ReaderF m r)) -> MonadReaderOps r m
 pkgMonadReaderOps localF (Left (askF, readerF)) =
-  MonadReaderOps askF localF readerF ?monadOps
+  MonadReaderOps ?monadOps askF localF readerF
 pkgMonadReaderOps localF (Right (Left askF)) =
   let ?functorOps = _applicativeFunctorOps monadApplicativeOps in
 {- reader :: (r -> a) -> m a
     reader f = do
       r <- ask
       return (f r) -}
-  MonadReaderOps askF localF (askF <&>) ?monadOps
+  MonadReaderOps ?monadOps askF localF (askF <&>)
 pkgMonadReaderOps localF (Right (Right readerF)) =
 {- ask   :: m r
     ask = reader id -}
-  MonadReaderOps (readerF id) localF readerF ?monadOps
+  MonadReaderOps ?monadOps (readerF id) localF readerF
 
 withReaderT :: (r -> r') -> ReaderT r' m a -> ReaderT r m a
 withReaderT f m = ReaderT $ runReaderT m . f

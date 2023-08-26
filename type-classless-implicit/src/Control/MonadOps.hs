@@ -77,11 +77,15 @@ liftA2Ap :: LiftA2 f -> Ap f
 liftA2Ap liftA2F = liftA2F id
 
 pkgApplicativeOps :: Pure f -> Either (Ap f, LiftA2 f) (Either (Ap f) (LiftA2 f)) -> ApplicativeOps f
-pkgApplicativeOps pureF (Left (apF, liftA2F)) = ApplicativeOps pureF apF liftA2F . pkgFunctorOps $ apF . pureF
-pkgApplicativeOps pureF (Right (Left apF)) = ApplicativeOps pureF apF (apPureLiftA2 apF pureF) . pkgFunctorOps $ apF . pureF
-pkgApplicativeOps pureF (Right (Right liftA2F)) =
-  let apF = liftA2Ap liftA2F in
-  ApplicativeOps pureF apF liftA2F . pkgFunctorOps $ apF . pureF
+pkgApplicativeOps pureF =
+  let f = ApplicativeOps pureF in
+  either
+    (\ (apF, liftA2F) -> f apF liftA2F . pkgFunctorOps $ apF . pureF)
+    (either
+      (\ apF -> f apF (apPureLiftA2 apF pureF) . pkgFunctorOps $ apF . pureF)
+      (\ liftA2F ->
+        let apF = liftA2Ap liftA2F in
+        f apF liftA2F . pkgFunctorOps $ apF . pureF))
 
 {- class Monad m where
        return :: a -> m a
@@ -157,10 +161,10 @@ also an Alternative.
 type VagueAmount m = forall a. m a -> m [a]
 
 data AlternativeOps m = AlternativeOps {
-  _some :: VagueAmount m,
-  _many :: VagueAmount m,
   _alternativeApplicativeOps :: ApplicativeOps m,
-  _alternativeMonoidLiftOps :: MonoidLiftOps m}
+  _alternativeMonoidLiftOps :: MonoidLiftOps m,
+  _some :: VagueAmount m,
+  _many :: VagueAmount m}
 --}
 
 some :: (?alternativeOps :: AlternativeOps m) => VagueAmount m
@@ -173,11 +177,11 @@ pkgAlternativeOps :: ApplicativeOps m -> MonoidLiftOps m -> AlternativeOps m
 pkgAlternativeOps applOps monoidLiftOps =
   let ?applicativeOps = applOps
       ?monoidLiftOps = monoidLiftOps in
-  AlternativeOps (\ v ->
+  AlternativeOps applOps monoidLiftOps (\ v ->
       let some_v = liftA2 (:) v (some_v <|> pure [])
       in some_v) (\ v ->
       let many_v = liftA2 (:) v many_v <|> pure []
-      in many_v) applOps monoidLiftOps
+      in many_v)
 
 {- class MonadTrans t where
     -- | Lift a computation from the argument monad to the constructed monad.

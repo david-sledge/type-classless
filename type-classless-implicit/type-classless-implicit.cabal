@@ -20,7 +20,8 @@ library
         cpp-options: -DWINDOWS
 
     build-depends:   base                      >= 4.10     && < 5,
-                    mtl
+                    mtl,
+                    transformers
 
     exposed-modules: Control.MonadOps
                    , Control.Monad.Misc

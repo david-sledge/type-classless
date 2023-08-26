@@ -2,6 +2,7 @@
 {-# LANGUAGE ImplicitParams #-}
 
 module Data.MonoidOps where
+
 import Data.Monoid (Endo(Endo))
 
 type Assoc a = a -> a -> a

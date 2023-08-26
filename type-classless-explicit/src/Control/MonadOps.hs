@@ -73,11 +73,15 @@ liftA2Ap :: LiftA2 f -> Ap f
 liftA2Ap liftA2F = liftA2F id
 
 pkgApplicativeOps :: Pure f -> Either (Ap f, LiftA2 f) (Either (Ap f) (LiftA2 f)) -> ApplicativeOps f
-pkgApplicativeOps pureF (Left (apF, liftA2F)) = ApplicativeOps pureF apF liftA2F . pkgFunctorOps $ apF . pureF
-pkgApplicativeOps pureF (Right (Left apF)) = ApplicativeOps pureF apF (apPureLiftA2 apF pureF) . pkgFunctorOps $ apF . pureF
-pkgApplicativeOps pureF (Right (Right liftA2F)) =
-  let apF = liftA2Ap liftA2F in
-  ApplicativeOps pureF apF liftA2F . pkgFunctorOps $ apF . pureF
+pkgApplicativeOps pureF =
+  let f = ApplicativeOps pureF in
+  either
+    (\ (apF, liftA2F) -> f apF liftA2F . pkgFunctorOps $ apF . pureF)
+    (either
+      (\ apF -> f apF (apPureLiftA2 apF pureF) . pkgFunctorOps $ apF . pureF)
+      (\ liftA2F ->
+        let apF = liftA2Ap liftA2F in
+        f apF liftA2F . pkgFunctorOps $ apF . pureF))
 
 {- class Monad m where
        return :: a -> m a

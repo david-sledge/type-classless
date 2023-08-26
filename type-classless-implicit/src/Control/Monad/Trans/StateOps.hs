@@ -112,9 +112,9 @@ stateTLiftOp = LiftOp $ \ m -> StateT $ \ s ->
 type StateOp s m = forall a . (s -> (a, s)) -> m a
 
 data MonadStateOps s m = MonadStateOps
-  { _state            :: StateOp s m
-  , _monadStateMonadOps :: MonadOps m
-  }
+  {
+    _monadStateMonadOps :: MonadOps m,
+    _state            :: StateOp s m }
 
 monadStateMonadOps :: (?monadStateOps :: MonadStateOps s m) => MonadOps m
 monadStateMonadOps = _monadStateMonadOps ?monadStateOps
@@ -138,7 +138,7 @@ put :: (?monadStateOps::MonadStateOps s m) => s -> m ()
 put s = putAnd s ()
 
 pkgStateTMonadStateOps :: (?applicativeOps::ApplicativeOps m) => MonadOps (StateT s m) -> MonadStateOps s (StateT s m)
-pkgStateTMonadStateOps = MonadStateOps (StateT . (pure .))
+pkgStateTMonadStateOps stateTMonadOps = MonadStateOps stateTMonadOps (StateT . (pure .))
 
 {- instance (Monad m) => MonadState s (StateT s m) where
     state = state -- from Control.Monad.Trans.State -}
@@ -162,7 +162,7 @@ readerTMonadStateOps =
   let ?monadOps = monadStateMonadOps
       ?liftOp = readerTLiftOp
   in
-  MonadStateOps (lift . state) readerTMonadOps
+  MonadStateOps readerTMonadOps (lift . state)
 
 {- instance (MonadReader r m) => MonadReader r (StateT s m) where
     ask = lift ask
@@ -174,10 +174,10 @@ strictStateTMonadReaderOps = let
     ?liftOp = stateTLiftOp
   in
   MonadReaderOps
+    pkgStrictStateTMonadOps
     (lift ask)
     (\f m -> StateT $ local f . runStateT m)
     (lift . reader)
-    pkgStrictStateTMonadOps
 
 lazyStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m) => MonadReaderOps r (StateT s m)
 lazyStateTMonadReaderOps = let
@@ -185,10 +185,10 @@ lazyStateTMonadReaderOps = let
     ?liftOp = stateTLiftOp
   in
   MonadReaderOps
+    pkgLazyStateTMonadOps
     (lift ask)
     (\f m -> StateT $ local f . runStateT m)
     (lift . reader)
-    pkgLazyStateTMonadOps
 
 revStateTMonadReaderOps :: (?monadReaderOps::MonadReaderOps r m, ?mfixOp::MfixOp m) => (MonadReaderOps r (StateT s1 m), MfixOp (StateT s2 m))
 revStateTMonadReaderOps = let
@@ -198,8 +198,8 @@ revStateTMonadReaderOps = let
   let (monadOps, mfixOp) = pkgRevStateTMonadOps in
   (
     MonadReaderOps
+      monadOps
       (lift ask)
       (\f m -> StateT $ local f . runStateT m)
-      (lift . reader)
-      monadOps,
+      (lift . reader),
     mfixOp)
