@@ -3,11 +3,11 @@
 
 module Control.MonadOps where
 
-import Prelude hiding (pure, fmap, return, (>>=), (<$>), (<>))
+import Prelude hiding (pure, fmap, return, (>>=), (<$), (<$>), (<>), (<*>))
 import Data.MonoidOps
 
 infixl 1  >>=
-infixl 4  <$>, <$, <*>
+infixl 4  <$>, <$, <*>, *>
 
 {- class Functor f where
     fmap :: (a -> b) -> f a -> f b -}
@@ -54,6 +54,9 @@ ap = _ap ?applicativeOps
 
 (<*>) :: (?applicativeOps :: ApplicativeOps f) => Ap f
 (<*>) = ap
+
+(*>) :: (?applicativeOps :: ApplicativeOps f) => f a -> f b -> f b
+a1 *> a2 = let ?functorOps = applicativeFunctorOps in (id <$ a1) <*> a2
 
 pure :: (?applicativeOps :: ApplicativeOps f) => Pure f
 pure = _pure ?applicativeOps
@@ -167,6 +170,12 @@ data AlternativeOps m = AlternativeOps {
   _many :: VagueAmount m}
 --}
 
+alternativeApplicativeOps :: (?alternativeOps :: AlternativeOps m) => ApplicativeOps m
+alternativeApplicativeOps = _alternativeApplicativeOps ?alternativeOps
+
+alternativeMonoidLiftOps :: (?alternativeOps :: AlternativeOps m) => MonoidLiftOps m
+alternativeMonoidLiftOps = _alternativeMonoidLiftOps ?alternativeOps
+
 some :: (?alternativeOps :: AlternativeOps m) => VagueAmount m
 some = _some ?alternativeOps
 
@@ -182,6 +191,10 @@ pkgAlternativeOps applOps monoidLiftOps =
       in some_v) (\ v ->
       let many_v = liftA2 (:) v many_v <|> pure []
       in many_v)
+
+guardAnd :: (?alternativeOps :: AlternativeOps m) => Bool -> b -> m b
+guardAnd True a = let ?applicativeOps = alternativeApplicativeOps in pure a
+guardAnd False _ = let ?monoidLiftOps = alternativeMonoidLiftOps in empty
 
 {- class MonadTrans t where
     -- | Lift a computation from the argument monad to the constructed monad.

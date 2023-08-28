@@ -3,8 +3,6 @@
 
 module Data.MonoidOps where
 
-import Data.Monoid (Endo(Endo))
-
 type Assoc a = a -> a -> a
 
 -- a monoid is an associative operation with an identity value
@@ -64,5 +62,5 @@ zipListMonoidOps = MonoidOps (\ xs ys -> xs ++ drop (length xs) ys) []
 
 {- instance Monoid (Endo a) where
         mempty = Endo id -}
-monoidEndo :: MonoidOps (Endo a)
-monoidEndo = MonoidOps (Prelude.<>) $ Endo id
+monoidEndoOps :: MonoidOps (a -> a)
+monoidEndoOps = MonoidOps (.) id

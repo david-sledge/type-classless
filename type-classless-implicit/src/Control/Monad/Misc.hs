@@ -148,3 +148,10 @@ constApplicativeOps = pkgApplicativeOps
   Left (
     coerce assoc,
     const $ \ (Const a) (Const b) -> Const $ a `assoc` b)
+
+constApplicative2Ops :: (?monoidOps :: MonoidOps m) => ApplicativeOps (Const m)
+constApplicative2Ops = pkgApplicativeOps
+  (const $ Const ident) $
+  Left (
+    coerce assoc,
+    const $ \ (Const a) (Const b) -> Const $ a `assoc` b)

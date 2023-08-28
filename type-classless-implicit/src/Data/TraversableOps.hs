@@ -3,11 +3,10 @@
 
 module Data.TraversableOps where
 
-import Prelude hiding (pure, fmap, foldr, traverse)
+import Prelude hiding (pure, fmap, foldMap, foldr, traverse)
 import Control.MonadOps (fmap, liftA2, pure, ApplicativeOps, FunctorOps)
 import Control.Monad.Misc (listFunctorOps, constApplicativeOps)
-import Data.MonoidOps (assoc, ident, monoidEndo, MonoidOps)
-import Data.Monoid (appEndo, Endo (Endo))
+import Data.MonoidOps (assoc, ident, monoidAndOps, monoidEndoOps, monoidOrOps, MonoidOps)
 import Control.Applicative (getConst, Const (Const))
 
 type Foldr t = forall a b . (a -> b -> b) -> b -> t a -> b
@@ -30,7 +29,13 @@ foldMap = _foldMap ?foldableOps
 pkgFoldableOps :: Either (Foldr t, FoldMap t) (Either (Foldr t) (FoldMap t)) -> FoldableOps t
 pkgFoldableOps (Left (foldrF, foldMapF)) = FoldableOps foldrF foldMapF
 pkgFoldableOps (Right (Left foldrF)) = FoldableOps foldrF $ \ f -> foldrF (assoc . f) ident
-pkgFoldableOps (Right (Right foldMapF)) = FoldableOps (\ f z t -> appEndo (let ?monoidOps = monoidEndo in foldMapF (Endo . f) t) z) foldMapF
+pkgFoldableOps (Right (Right foldMapF)) = FoldableOps (let ?monoidOps = monoidEndoOps in flip . foldMapF) foldMapF
+
+all :: (?foldableOps :: FoldableOps t) => (a -> Bool) -> t a -> Bool
+all = let ?monoidOps = monoidAndOps in foldMap
+
+any :: (?foldableOps :: FoldableOps t) => (a -> Bool) -> t a -> Bool
+any = let ?monoidOps = monoidOrOps in foldMap
 
 type Traverse t = forall f a b . (?applicativeOps :: ApplicativeOps f) =>
   (a -> f b) -> t a -> f (t b)
