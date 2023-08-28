@@ -2,7 +2,7 @@
 {-# LANGUAGE ImplicitParams #-}
 
 import Prelude hiding ((*>))
-import FarmerWolfGoatCabbage ( findSolutions )
+import WolfGoatCabbage ( findSolutions )
 import Control.Monad.Misc ( ioApplicativeOps, ioMonadOps )
 import Control.MonadOps ( (*>) )
 

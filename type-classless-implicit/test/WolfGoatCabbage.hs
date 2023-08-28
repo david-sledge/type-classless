@@ -2,7 +2,7 @@
 {-# LANGUAGE ImpredicativeTypes #-}
 
 -- addaptation of https://github.com/mstksg/inCode/blob/master/code-samples/monad-plus/WolfGoatCabbage.hs
-module FarmerWolfGoatCabbage where
+module WolfGoatCabbage where
 
 import Prelude hiding (all, fmap, foldMap, pure, (>>=), (<$>), (*>))
 import Control.Monad.Misc
